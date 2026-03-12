@@ -22,6 +22,10 @@ from sheets import (
     add_to_backlog,
     update_backlog_status,
     list_publications,
+    save_draft,
+    read_draft,
+    clear_draft,
+    batch_update_backlog_statuses,
 )
 
 # --- Page Configuration ---
@@ -66,10 +70,10 @@ selected_pub = st.sidebar.selectbox(
     help="Each publication has its own Google Sheet database.",
 )
 
-# Page navigation
+# Page navigation — now includes "Cluster & Draft" for the AI workflow
 page = st.sidebar.radio(
     "Navigate",
-    options=["Dashboard", "Add Content"],
+    options=["Dashboard", "Add Content", "Cluster & Draft"],
     index=0,
 )
 
@@ -171,7 +175,7 @@ def render_ingest_form():
 
 # --- Page: Dashboard ---
 def render_dashboard():
-    """The main dashboard showing the Inbound Backlog with filters and metrics."""
+    """The main dashboard with inline status editing via st.data_editor."""
     st.header(f"Dashboard: {selected_pub}")
 
     # Load data (cached for 30 seconds to avoid hammering the API)
@@ -217,48 +221,261 @@ def render_dashboard():
     met2.metric("Showing", len(filtered_df))
     met3.metric("New", len(df[df["Status"] == "New"]))
 
-    # --- Data Table ---
-    st.dataframe(
+    # --- Valid statuses for the dropdown ---
+    valid_statuses = ["New", "Reviewed", "Queued", "Used", "Archived"]
+
+    # --- Editable Data Table ---
+    # st.data_editor replaces the old st.dataframe + separate status form.
+    # The "disabled" parameter locks all columns EXCEPT Status.
+    # The Status column becomes a dropdown (SelectboxColumn) — just click to change.
+    edited_df = st.data_editor(
         filtered_df,
+        key="backlog_editor",
         use_container_width=True,
+        hide_index=True,
+        disabled=["ID", "Date", "URL", "Reflection", "Category"],
         column_config={
             "URL": st.column_config.LinkColumn("URL"),
             "ID": st.column_config.NumberColumn("ID", width="small"),
             "Date": st.column_config.TextColumn("Date", width="medium"),
             "Reflection": st.column_config.TextColumn("Reflection", width="large"),
+            "Status": st.column_config.SelectboxColumn(
+                "Status",
+                options=valid_statuses,
+                required=True,
+                help="Click to change the status of this entry.",
+            ),
         },
-        hide_index=True,
+        num_rows="fixed",
     )
 
-    # --- Status Updater ---
-    st.divider()
-    st.subheader("Update Entry Status")
+    # --- Detect and Save Edits ---
+    # When you change a Status cell, Streamlit tracks the change in
+    # session_state["backlog_editor"]["edited_rows"]. The format is:
+    #   { "0": {"Status": "Reviewed"}, "3": {"Status": "Used"} }
+    # where the key is the zero-based index in the FILTERED DataFrame.
+    if st.button("Save Changes", type="primary"):
+        editor_state = st.session_state.get("backlog_editor", {})
+        edited_rows = editor_state.get("edited_rows", {})
+
+        if not edited_rows:
+            st.info("No changes to save.")
+        else:
+            save_count = 0
+            for row_index_str, changes in edited_rows.items():
+                row_index = int(row_index_str)
+                if "Status" in changes:
+                    # Get the actual entry ID from the filtered DataFrame
+                    entry_id = int(filtered_df.iloc[row_index]["ID"])
+                    new_status = changes["Status"]
+                    # Sheet row = entry ID + 1 (row 1 is the header)
+                    sheet_row = entry_id + 1
+                    update_backlog_status(spreadsheet, sheet_row, new_status)
+                    save_count += 1
+
+            st.success(f"Updated {save_count} entry(ies)!")
+            st.cache_data.clear()
+            st.rerun()
+
+
+# --- Page: Cluster & Draft ---
+def render_cluster_and_draft():
+    """The AI-powered clustering and draft generation page.
+
+    Workflow:
+    1. Click "Cluster Links" → Gemini groups your New/Reviewed entries into topics
+    2. Review clusters, uncheck any you want to skip
+    3. Click "Generate Draft" → Gemini writes a newsletter draft
+    4. Edit the draft sections, save to Google Sheets
+    5. Come back later (even on a different device) to resume editing
+    """
+    st.header("Cluster & Draft")
+
+    # --- Step 1: Clustering ---
+    st.subheader("Step 1: Cluster Your Links")
     st.caption(
-        "Change an entry's status as you work through your backlog. "
-        "The ID is shown in the table above."
+        "Takes all your New and Reviewed entries and groups them into "
+        "topic clusters using Gemini AI."
     )
 
-    with st.form("status_update_form"):
-        update_col1, update_col2 = st.columns(2)
+    # Load backlog data
+    backlog_data = load_backlog(spreadsheet, spreadsheet.id)
 
-        with update_col1:
-            row_id = st.number_input("Entry ID", min_value=1, step=1)
+    if not backlog_data:
+        st.info("No entries in the backlog. Add some content first!")
+        return
 
-        with update_col2:
-            new_status = st.selectbox(
-                "New Status",
-                options=["New", "Reviewed", "Queued", "Used", "Archived"],
+    df = pd.DataFrame(backlog_data)
+
+    # Filter to only New and Reviewed entries (ready for clustering)
+    clusterizable = df[df["Status"].isin(["New", "Reviewed"])]
+
+    if clusterizable.empty:
+        st.info(
+            "No entries with status 'New' or 'Reviewed' to cluster. "
+            "Update entry statuses on the Dashboard first."
+        )
+        # Still check for existing draft below
+    else:
+        st.write(f"**{len(clusterizable)} entries** ready for clustering.")
+
+        # --- Cluster Button ---
+        if st.button("Cluster Links", type="primary"):
+            with st.spinner("Asking Gemini to find themes in your links..."):
+                from gemini import cluster_entries
+
+                entries_for_clustering = clusterizable.to_dict("records")
+                clusters = cluster_entries(entries_for_clustering)
+
+                if clusters is None:
+                    st.error(
+                        "Clustering failed. Check that your Gemini API key is "
+                        "configured in .env (locally) or Streamlit Secrets (cloud)."
+                    )
+                else:
+                    # Store clusters in session_state so they persist across reruns
+                    st.session_state["clusters"] = clusters
+                    st.session_state["cluster_entries"] = entries_for_clustering
+
+    # --- Display Clusters (if they exist in session state) ---
+    if "clusters" in st.session_state:
+        clusters = st.session_state["clusters"]
+        entries_lookup = {
+            e["ID"]: e for e in st.session_state["cluster_entries"]
+        }
+
+        st.divider()
+        st.subheader("Step 2: Review & Select Clusters")
+        st.caption("Uncheck any clusters you want to skip in this issue.")
+
+        selected_clusters = []
+
+        for i, cluster in enumerate(clusters):
+            is_selected = st.checkbox(
+                f"**{cluster['cluster_name']}** — {cluster['description']}",
+                value=True,
+                key=f"cluster_checkbox_{i}",
             )
 
-        update_submitted = st.form_submit_button("Update Status")
+            if is_selected:
+                selected_clusters.append(cluster)
 
-    if update_submitted:
-        # The actual row in the sheet = ID + 1 (because row 1 is the header)
-        row_number = int(row_id) + 1
-        update_backlog_status(spreadsheet, row_number, new_status)
-        st.success(f"Updated entry #{row_id} to '{new_status}'")
-        st.cache_data.clear()
-        st.rerun()
+            # Show the entries in this cluster
+            with st.expander(f"View entries in '{cluster['cluster_name']}'"):
+                for entry_id in cluster["entry_ids"]:
+                    entry = entries_lookup.get(entry_id, {})
+                    if entry:
+                        st.markdown(
+                            f"- **[Link]({entry.get('URL', '#')})** "
+                            f"({entry.get('Category', 'N/A')})\n\n"
+                            f"  {entry.get('Reflection', 'No reflection')}"
+                        )
+
+        st.session_state["selected_clusters"] = selected_clusters
+
+        # --- Step 3: Generate Draft ---
+        st.divider()
+        st.subheader("Step 3: Generate Newsletter Draft")
+
+        if not selected_clusters:
+            st.info("Select at least one cluster above to generate a draft.")
+        else:
+            if st.button("Generate Draft", type="primary"):
+                with st.spinner("Gemini is writing your newsletter draft..."):
+                    from gemini import generate_draft
+
+                    draft_sections = generate_draft(selected_clusters, entries_lookup)
+
+                    if draft_sections is None:
+                        st.error(
+                            "Draft generation failed. Check your Gemini API key."
+                        )
+                    else:
+                        st.session_state["draft_sections"] = draft_sections
+                        st.success("Draft generated! Edit it below.")
+
+                        # Auto-update clustered entries to "Queued" status
+                        all_entry_ids = []
+                        for cluster in selected_clusters:
+                            all_entry_ids.extend(cluster["entry_ids"])
+                        batch_update_backlog_statuses(
+                            spreadsheet, all_entry_ids, "Queued"
+                        )
+                        st.cache_data.clear()
+
+    # --- Step 4: Edit & Save Draft ---
+    # Check for an existing saved draft if we don't have one in session state.
+    # This enables cross-device persistence: start on PC, finish on phone.
+    if "draft_sections" not in st.session_state:
+        existing_draft = read_draft(spreadsheet)
+        if existing_draft:
+            st.session_state["draft_sections"] = [
+                {"section": row["Section"], "content": row["Content"]}
+                for row in existing_draft
+            ]
+
+    if "draft_sections" in st.session_state:
+        st.divider()
+        st.subheader("Step 4: Edit Your Draft")
+        st.caption(
+            "Edit each section below. Click 'Save Draft' to persist your changes "
+            "to Google Sheets — you can come back later and pick up where you left off."
+        )
+
+        draft_sections = st.session_state["draft_sections"]
+        edited_sections = []
+
+        for i, section in enumerate(draft_sections):
+            st.markdown(f"### {section['section']}")
+            edited_content = st.text_area(
+                label=f"Edit: {section['section']}",
+                value=section["content"],
+                height=200,
+                key=f"draft_section_{i}",
+                label_visibility="collapsed",
+            )
+            edited_sections.append({
+                "section": section["section"],
+                "content": edited_content,
+            })
+
+        # --- Save, Preview, and Clear buttons ---
+        btn_col1, btn_col2, btn_col3 = st.columns(3)
+
+        with btn_col1:
+            if st.button("Save Draft", type="primary"):
+                save_draft(spreadsheet, edited_sections)
+                st.session_state["draft_sections"] = edited_sections
+                st.success("Draft saved to Google Sheets!")
+
+        with btn_col2:
+            if st.button("Preview as Markdown"):
+                st.session_state["show_preview"] = not st.session_state.get(
+                    "show_preview", False
+                )
+
+        with btn_col3:
+            if st.button("Clear Draft"):
+                clear_draft(spreadsheet)
+                for key in [
+                    "draft_sections",
+                    "clusters",
+                    "cluster_entries",
+                    "selected_clusters",
+                    "show_preview",
+                ]:
+                    st.session_state.pop(key, None)
+                st.info("Draft cleared. You can start fresh!")
+                st.rerun()
+
+        # --- Markdown Preview ---
+        if st.session_state.get("show_preview", False):
+            st.divider()
+            st.subheader("Preview")
+            full_markdown = "\n\n".join(
+                section["content"] for section in edited_sections
+            )
+            st.markdown(full_markdown)
 
 
 # --- Page Routing ---
@@ -267,3 +484,5 @@ if page == "Dashboard":
     render_dashboard()
 elif page == "Add Content":
     render_ingest_form()
+elif page == "Cluster & Draft":
+    render_cluster_and_draft()

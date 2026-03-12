@@ -240,3 +240,97 @@ def list_publications(client):
             # Strip the "_DB" suffix to get the publication name
             publications.append(name[:-3])
     return sorted(publications)
+
+
+# --- Draft State Operations ---
+# These functions manage the newsletter draft stored in the Draft_State tab.
+# The draft persists in Google Sheets so you can start editing on your PC
+# and finish on your phone — same data, any device.
+
+
+def save_draft(spreadsheet, sections):
+    """
+    Saves the newsletter draft to the Draft_State tab.
+
+    This overwrites any existing draft (clears old data first, then writes
+    the new sections). Each section becomes one row.
+
+    Args:
+        spreadsheet: The active spreadsheet
+        sections: A list of dicts, each with keys: "section" and "content"
+                  Example: [
+                      {"section": "Intro", "content": "Welcome to this week's..."},
+                      {"section": "AI Revolution", "content": "Three articles caught..."},
+                  ]
+    """
+    worksheet = spreadsheet.worksheet(DRAFT_TAB)
+
+    # Clear existing draft data (keep the header row)
+    all_values = worksheet.get_all_values()
+    if len(all_values) > 1:
+        last_row = len(all_values)
+        worksheet.batch_clear([f"A2:C{last_row}"])
+
+    # Write the new sections
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    rows = []
+    for section in sections:
+        rows.append([section["section"], section["content"], timestamp])
+
+    if rows:
+        worksheet.update(
+            rows, f"A2:C{1 + len(rows)}", value_input_option="USER_ENTERED"
+        )
+
+
+def read_draft(spreadsheet):
+    """
+    Reads the current draft from the Draft_State tab.
+
+    Returns:
+        A list of dicts with keys: Section, Content, Last_Modified
+        Returns an empty list if no draft exists.
+    """
+    worksheet = spreadsheet.worksheet(DRAFT_TAB)
+    return worksheet.get_all_records()
+
+
+def clear_draft(spreadsheet):
+    """
+    Deletes all draft content from the Draft_State tab (keeps headers).
+
+    Use this when you want to start a fresh draft.
+    """
+    worksheet = spreadsheet.worksheet(DRAFT_TAB)
+    all_values = worksheet.get_all_values()
+    if len(all_values) > 1:
+        last_row = len(all_values)
+        worksheet.batch_clear([f"A2:C{last_row}"])
+
+
+def batch_update_backlog_statuses(spreadsheet, entry_ids, new_status):
+    """
+    Updates the Status column for multiple entries at once.
+
+    More efficient than calling update_backlog_status() in a loop because
+    it uses a single batch update instead of one API call per row.
+
+    Args:
+        spreadsheet: The active spreadsheet
+        entry_ids: A list of entry IDs (integers) to update
+        new_status: The new status string (e.g., "Queued")
+    """
+    worksheet = spreadsheet.worksheet(BACKLOG_TAB)
+    status_col = BACKLOG_HEADERS.index("Status") + 1
+
+    # Build a list of cell updates
+    # Each entry ID maps to sheet row = ID + 1 (header is row 1)
+    cells_to_update = []
+    for entry_id in entry_ids:
+        sheet_row = int(entry_id) + 1
+        cells_to_update.append(
+            gspread.Cell(row=sheet_row, col=status_col, value=new_status)
+        )
+
+    if cells_to_update:
+        worksheet.update_cells(cells_to_update, value_input_option="USER_ENTERED")

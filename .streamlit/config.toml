@@ -1,0 +1,20 @@
+# Nerd Out Automator - Brand Theme
+# Streamlit reads this file automatically on startup.
+# Users can switch between light and dark mode via Settings (hamburger menu).
+
+[theme]
+# Electric Teal - used for buttons, links, sliders, and all interactive elements
+primaryColor = "#00C4CC"
+font = "sans serif"
+
+[theme.light]
+# Cloud Gray background with Charcoal text
+backgroundColor = "#F4F6F8"
+secondaryBackgroundColor = "#E8ECF0"
+textColor = "#333333"
+
+[theme.dark]
+# Deep Space Blue background with Cloud Gray text
+backgroundColor = "#1A2A45"
+secondaryBackgroundColor = "#243554"
+textColor = "#F4F6F8"
