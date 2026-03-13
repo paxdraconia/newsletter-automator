@@ -41,7 +41,13 @@ def fetch_url_title(url):
         response = requests.get(
             url,
             timeout=5,
-            headers={"User-Agent": "Mozilla/5.0 (Newsletter Automator)"},
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                )
+            },
             allow_redirects=True,
         )
         response.raise_for_status()
@@ -53,8 +59,12 @@ def fetch_url_title(url):
 
         soup = BeautifulSoup(response.text, "html.parser")
         title_tag = soup.find("title")
-        if title_tag and title_tag.string:
-            return title_tag.string.strip()
+        if title_tag:
+            # Use .get_text() instead of .string — .string returns None when
+            # the <title> tag has nested elements (common on YouTube, news sites)
+            text = title_tag.get_text(strip=True)
+            if text:
+                return text
         return None
     except Exception:
         return None
@@ -238,19 +248,28 @@ Generate a complete newsletter draft in Markdown with these sections:
    Make it inviting and energetic.
 
 2. One section per topic cluster (use the cluster name as the section heading).
-   For each section:
-   - Write a brief 2-3 sentence narrative connecting the entries
-   - For each entry, write a 1-2 sentence summary that captures why it matters
-   - Format every link as [Article Title](URL) using the provided Article Title.
-     If no Article Title was provided for a link, use the Category as the link text.
-   - Use the curator's reflection as inspiration but write fresh copy
+   For each section, format EACH entry like this example:
+
+   > [Article Title](https://example.com/article)
+
+   Your 1-2 sentence commentary about why this matters and what the reader
+   should take away from it. Use the curator's reflection as inspiration
+   but write fresh copy.
+
+   Rules for entries:
+   - Start each entry with a blockquote line containing ONLY the linked title
+   - Use the provided Article Title as the link text
+   - If no Article Title was provided, use the Category as the link text
+   - After the blockquote link, add a blank line, then the commentary paragraph
+   - Do NOT embed links inside the commentary text
 
 3. "Closing" — A 1-2 sentence sign-off that encourages readers to share
    or reply with their own finds.
 
 Important:
-- Use Markdown formatting (## for headings, **bold** for emphasis, [links](url))
-- Every link MUST be formatted as [Article Title](URL), never as a raw URL
+- Use Markdown formatting (## for headings, **bold** for emphasis)
+- Every link MUST be formatted as > [Article Title](URL) on its own blockquote line
+- Never use raw URLs — always use [Title](URL) format
 - Keep each section concise — this is a newsletter, not an essay
 - The total draft should be scannable and fun to read
 """

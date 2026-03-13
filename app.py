@@ -517,6 +517,12 @@ def render_settings():
         "These values are saved to Google Sheets and persist across sessions."
     )
 
+    st.info(
+        "**Tip:** You can use Markdown links in these fields! "
+        "Format: `[Link Text](https://url)` — for example: "
+        "`[Nerd Out Gear](https://your-merch-link.com)`"
+    )
+
     # Load existing config (no cache — this page needs fresh values after saving)
     config = read_config(spreadsheet)
 
@@ -534,6 +540,18 @@ def render_settings():
         placeholder="Paste your recurring footer here — social links, book links, etc.",
         help="This text is appended as a Footer section at the end of every new draft.",
     )
+
+    # Live markdown preview so users can verify their links render correctly
+    if default_intro or default_footer:
+        st.divider()
+        st.subheader("Preview")
+        if default_intro:
+            st.markdown("**Intro:**")
+            st.markdown(default_intro)
+        if default_footer:
+            st.markdown("**Footer:**")
+            st.markdown(default_footer)
+        st.divider()
 
     if st.button("Save Settings", type="primary"):
         save_config(spreadsheet, {
