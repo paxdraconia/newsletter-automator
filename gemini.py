@@ -11,6 +11,8 @@ How it works:
 """
 
 import json
+import requests
+from bs4 import BeautifulSoup
 from google import genai
 from config import get_gemini_api_key
 
@@ -25,6 +27,55 @@ def get_gemini_client():
     if not api_key:
         return None
     return genai.Client(api_key=api_key)
+
+
+def fetch_url_title(url):
+    """
+    Fetches the HTML <title> tag from a URL.
+
+    Returns the title string, or None if it can't be fetched (timeout,
+    non-HTML page, connection error, etc.). Wrapped in try/except so
+    it never crashes the app.
+    """
+    try:
+        response = requests.get(
+            url,
+            timeout=5,
+            headers={"User-Agent": "Mozilla/5.0 (Newsletter Automator)"},
+            allow_redirects=True,
+        )
+        response.raise_for_status()
+
+        # Only parse HTML content
+        content_type = response.headers.get("Content-Type", "")
+        if "html" not in content_type:
+            return None
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        title_tag = soup.find("title")
+        if title_tag and title_tag.string:
+            return title_tag.string.strip()
+        return None
+    except Exception:
+        return None
+
+
+def fetch_all_titles(entries_lookup):
+    """
+    Fetches HTML titles for all entries in the lookup dict.
+
+    Args:
+        entries_lookup: A dict mapping entry ID -> entry dict (each has a 'URL' key)
+
+    Returns:
+        A dict mapping URL -> title string (or None if fetch failed)
+    """
+    url_titles = {}
+    for entry in entries_lookup.values():
+        url = entry.get("URL", "")
+        if url and url not in url_titles:
+            url_titles[url] = fetch_url_title(url)
+    return url_titles
 
 
 def cluster_entries(entries):
@@ -127,7 +178,7 @@ Rules:
         return None
 
 
-def generate_draft(selected_clusters, entries_lookup):
+def generate_draft(selected_clusters, entries_lookup, url_titles=None):
     """
     Takes selected clusters and their entries, and asks Gemini to generate
     a structured Markdown newsletter draft.
@@ -135,6 +186,8 @@ def generate_draft(selected_clusters, entries_lookup):
     Args:
         selected_clusters: A list of cluster dicts from cluster_entries()
         entries_lookup: A dict mapping entry ID -> entry dict
+        url_titles: Optional dict mapping URL -> article title string.
+                    If provided, Gemini will use article titles as link text.
 
     Returns:
         A list of section dicts on success:
@@ -158,8 +211,14 @@ def generate_draft(selected_clusters, entries_lookup):
         for eid in cluster["entry_ids"]:
             entry = entries_lookup.get(eid, {})
             if entry:
+                url = entry.get('URL', 'N/A')
+                clusters_text += f"- URL: {url}\n"
+                # Include the fetched article title if available
+                if url_titles:
+                    title = url_titles.get(url)
+                    if title:
+                        clusters_text += f"  Article Title: {title}\n"
                 clusters_text += (
-                    f"- URL: {entry.get('URL', 'N/A')}\n"
                     f"  Reflection: {entry.get('Reflection', 'N/A')}\n"
                     f"  Category: {entry.get('Category', 'N/A')}\n"
                 )
@@ -182,7 +241,8 @@ Generate a complete newsletter draft in Markdown with these sections:
    For each section:
    - Write a brief 2-3 sentence narrative connecting the entries
    - For each entry, write a 1-2 sentence summary that captures why it matters
-   - Include the URL as a Markdown link
+   - Format every link as [Article Title](URL) using the provided Article Title.
+     If no Article Title was provided for a link, use the Category as the link text.
    - Use the curator's reflection as inspiration but write fresh copy
 
 3. "Closing" — A 1-2 sentence sign-off that encourages readers to share
@@ -190,6 +250,7 @@ Generate a complete newsletter draft in Markdown with these sections:
 
 Important:
 - Use Markdown formatting (## for headings, **bold** for emphasis, [links](url))
+- Every link MUST be formatted as [Article Title](URL), never as a raw URL
 - Keep each section concise — this is a newsletter, not an essay
 - The total draft should be scannable and fun to read
 """

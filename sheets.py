@@ -27,11 +27,15 @@ BOOK_HEADERS = ["Title", "Link", "Categories", "Last_Used", "Times_Used"]
 DRAFT_TAB = "Draft_State"
 DRAFT_HEADERS = ["Section", "Content", "Last_Modified"]
 
+CONFIG_TAB = "Config"
+CONFIG_HEADERS = ["Setting", "Value"]
+
 # All tabs and their headers, grouped for easy iteration
 ALL_TABS = {
     BACKLOG_TAB: BACKLOG_HEADERS,
     BOOK_TAB: BOOK_HEADERS,
     DRAFT_TAB: DRAFT_HEADERS,
+    CONFIG_TAB: CONFIG_HEADERS,
 }
 
 
@@ -334,3 +338,49 @@ def batch_update_backlog_statuses(spreadsheet, entry_ids, new_status):
 
     if cells_to_update:
         worksheet.update_cells(cells_to_update, value_input_option="USER_ENTERED")
+
+
+# --- Config Operations ---
+# These functions manage persistent settings in the Config tab.
+# Settings are stored as key-value pairs (one per row).
+
+
+def read_config(spreadsheet):
+    """
+    Reads all settings from the Config tab and returns them as a flat dict.
+
+    Example return value:
+        {"default_intro": "Happy Wednesday!", "default_footer": "Follow me on..."}
+
+    Returns an empty dict if no settings have been saved yet.
+    """
+    worksheet = spreadsheet.worksheet(CONFIG_TAB)
+    records = worksheet.get_all_records()
+    # Convert list of {"Setting": key, "Value": val} dicts to a flat dict
+    return {row["Setting"]: row["Value"] for row in records if row["Setting"]}
+
+
+def save_config(spreadsheet, config_dict):
+    """
+    Saves settings to the Config tab, replacing any existing values.
+
+    Uses the same clear-then-write pattern as save_draft().
+
+    Args:
+        spreadsheet: The active spreadsheet
+        config_dict: A dict of settings, e.g. {"default_intro": "Happy Wednesday!"}
+    """
+    worksheet = spreadsheet.worksheet(CONFIG_TAB)
+
+    # Clear existing data (keep the header row)
+    all_values = worksheet.get_all_values()
+    if len(all_values) > 1:
+        last_row = len(all_values)
+        worksheet.batch_clear([f"A2:B{last_row}"])
+
+    # Write the new settings
+    rows = [[key, value] for key, value in config_dict.items()]
+    if rows:
+        worksheet.update(
+            rows, f"A2:B{1 + len(rows)}", value_input_option="USER_ENTERED"
+        )

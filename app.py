@@ -26,6 +26,8 @@ from sheets import (
     read_draft,
     clear_draft,
     batch_update_backlog_statuses,
+    read_config,
+    save_config,
 )
 
 # --- Page Configuration ---
@@ -73,7 +75,7 @@ selected_pub = st.sidebar.selectbox(
 # Page navigation — now includes "Cluster & Draft" for the AI workflow
 page = st.sidebar.radio(
     "Navigate",
-    options=["Dashboard", "Add Content", "Cluster & Draft"],
+    options=["Dashboard", "Add Content", "Cluster & Draft", "Settings"],
     index=0,
 )
 
@@ -381,16 +383,44 @@ def render_cluster_and_draft():
             st.info("Select at least one cluster above to generate a draft.")
         else:
             if st.button("Generate Draft", type="primary"):
+                # Fetch article titles from URLs for better link formatting
+                with st.spinner("Fetching article titles..."):
+                    from gemini import fetch_all_titles
+                    url_titles = fetch_all_titles(entries_lookup)
+
                 with st.spinner("Gemini is writing your newsletter draft..."):
                     from gemini import generate_draft
 
-                    draft_sections = generate_draft(selected_clusters, entries_lookup)
+                    draft_sections = generate_draft(
+                        selected_clusters, entries_lookup, url_titles
+                    )
 
                     if draft_sections is None:
                         st.error(
                             "Draft generation failed. Check your Gemini API key."
                         )
                     else:
+                        # Auto-assemble: prepend intro, append footer from Settings
+                        config = read_config(spreadsheet)
+                        default_intro = config.get("default_intro", "")
+                        default_footer = config.get("default_footer", "")
+
+                        if default_intro:
+                            for section in draft_sections:
+                                if section["section"] == "Intro":
+                                    section["content"] = (
+                                        default_intro
+                                        + "\n\n"
+                                        + section["content"]
+                                    )
+                                    break
+
+                        if default_footer:
+                            draft_sections.append({
+                                "section": "Footer",
+                                "content": default_footer,
+                            })
+
                         st.session_state["draft_sections"] = draft_sections
                         st.success("Draft generated! Edit it below.")
 
@@ -478,6 +508,42 @@ def render_cluster_and_draft():
             st.markdown(full_markdown)
 
 
+# --- Page: Settings ---
+def render_settings():
+    """Settings page for configuring newsletter defaults like intro and footer."""
+    st.header("Settings")
+    st.caption(
+        "Configure default text that gets added to every newsletter draft. "
+        "These values are saved to Google Sheets and persist across sessions."
+    )
+
+    # Load existing config (no cache — this page needs fresh values after saving)
+    config = read_config(spreadsheet)
+
+    default_intro = st.text_area(
+        "Default Intro",
+        value=config.get("default_intro", "Happy Wednesday!"),
+        height=100,
+        help="This text is prepended to every new draft's Intro section.",
+    )
+
+    default_footer = st.text_area(
+        "Default Footer",
+        value=config.get("default_footer", ""),
+        height=200,
+        placeholder="Paste your recurring footer here — social links, book links, etc.",
+        help="This text is appended as a Footer section at the end of every new draft.",
+    )
+
+    if st.button("Save Settings", type="primary"):
+        save_config(spreadsheet, {
+            "default_intro": default_intro,
+            "default_footer": default_footer,
+        })
+        st.cache_data.clear()
+        st.success("Settings saved!")
+
+
 # --- Page Routing ---
 # This is where we decide which page to show based on the sidebar selection.
 if page == "Dashboard":
@@ -486,3 +552,5 @@ elif page == "Add Content":
     render_ingest_form()
 elif page == "Cluster & Draft":
     render_cluster_and_draft()
+elif page == "Settings":
+    render_settings()
