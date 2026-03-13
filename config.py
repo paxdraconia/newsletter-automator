@@ -23,14 +23,14 @@ SCOPES = [
 ]
 
 
-@st.cache_resource
+@st.cache_resource(ttl=3000)
 def get_gspread_client():
     """
     Returns an authenticated Google Sheets client.
 
-    @st.cache_resource means Streamlit will call this function ONCE and reuse
-    the result across all reruns. Without this, we'd re-authenticate on every
-    single button click or page interaction (wasteful and slow).
+    @st.cache_resource(ttl=3000) means Streamlit caches the client for ~50 minutes,
+    then re-authenticates. Google service account tokens expire after 1 hour, so
+    refreshing at 50 minutes prevents "token expired" crashes.
 
     The function tries two authentication methods:
     1. Streamlit Cloud: reads credentials from st.secrets (set in the cloud dashboard)

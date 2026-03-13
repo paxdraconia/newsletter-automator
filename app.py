@@ -106,8 +106,17 @@ with st.sidebar.expander("Manage Publications"):
 
 
 # --- Initialize the selected publication's sheet ---
-spreadsheet = get_or_create_spreadsheet(client, selected_pub)
-ensure_tabs(spreadsheet)
+# Wrapped in try/except: if the Google auth token has expired (happens after ~1 hour),
+# the first API call will fail. We catch that, clear the cached client so it
+# re-authenticates, and retry once. This makes the app self-healing.
+try:
+    spreadsheet = get_or_create_spreadsheet(client, selected_pub)
+    ensure_tabs(spreadsheet)
+except Exception:
+    st.cache_resource.clear()
+    client = get_gspread_client()
+    spreadsheet = get_or_create_spreadsheet(client, selected_pub)
+    ensure_tabs(spreadsheet)
 
 
 # --- Page: Add Content ---
@@ -347,31 +356,53 @@ def render_cluster_and_draft():
         }
 
         st.divider()
-        st.subheader("Step 2: Review & Select Clusters")
-        st.caption("Uncheck any clusters you want to skip in this issue.")
+        st.subheader("Step 2: Select Clusters & Articles")
+        st.caption(
+            "Check the clusters you want to include. "
+            "Expand each cluster to select or deselect individual articles."
+        )
 
+        # Build filtered clusters based on user selections.
+        # Each cluster checkbox acts as a "select all" toggle, and individual
+        # entry checkboxes let you fine-tune which articles go into the draft.
         selected_clusters = []
 
         for i, cluster in enumerate(clusters):
-            is_selected = st.checkbox(
+            cluster_checked = st.checkbox(
                 f"**{cluster['cluster_name']}** — {cluster['description']}",
-                value=True,
+                value=False,
                 key=f"cluster_checkbox_{i}",
             )
 
-            if is_selected:
-                selected_clusters.append(cluster)
-
-            # Show the entries in this cluster
-            with st.expander(f"View entries in '{cluster['cluster_name']}'"):
+            # Show entries inside an expander — with per-entry checkboxes
+            entry_count = len(cluster["entry_ids"])
+            with st.expander(
+                f"View entries ({entry_count} articles)"
+            ):
+                selected_entry_ids = []
                 for entry_id in cluster["entry_ids"]:
                     entry = entries_lookup.get(entry_id, {})
                     if entry:
-                        st.markdown(
-                            f"- **[Link]({entry.get('URL', '#')})** "
-                            f"({entry.get('Category', 'N/A')})\n\n"
-                            f"  {entry.get('Reflection', 'No reflection')}"
+                        # Entry checkbox defaults to checked when cluster is checked
+                        entry_checked = st.checkbox(
+                            f"[{entry.get('URL', '#')}]  ({entry.get('Category', 'N/A')})",
+                            value=cluster_checked,
+                            key=f"entry_checkbox_{i}_{entry_id}",
                         )
+                        # Show the reflection text below the checkbox
+                        reflection = entry.get("Reflection", "No reflection")
+                        st.caption(f"  {reflection}")
+
+                        if entry_checked:
+                            selected_entry_ids.append(entry_id)
+
+            # Build a filtered cluster object with only selected entries
+            if selected_entry_ids:
+                selected_clusters.append({
+                    "cluster_name": cluster["cluster_name"],
+                    "description": cluster["description"],
+                    "entry_ids": selected_entry_ids,
+                })
 
         st.session_state["selected_clusters"] = selected_clusters
 
@@ -380,8 +411,15 @@ def render_cluster_and_draft():
         st.subheader("Step 3: Generate Newsletter Draft")
 
         if not selected_clusters:
-            st.info("Select at least one cluster above to generate a draft.")
+            st.info("Select at least one cluster and article above to generate a draft.")
         else:
+            # Show a summary of what will be drafted
+            total_articles = sum(len(c["entry_ids"]) for c in selected_clusters)
+            st.write(
+                f"**{len(selected_clusters)} clusters** with "
+                f"**{total_articles} articles** selected."
+            )
+
             if st.button("Generate Draft", type="primary"):
                 # Fetch article titles from URLs for better link formatting
                 with st.spinner("Fetching article titles..."):
@@ -424,7 +462,7 @@ def render_cluster_and_draft():
                         st.session_state["draft_sections"] = draft_sections
                         st.success("Draft generated! Edit it below.")
 
-                        # Auto-update clustered entries to "Queued" status
+                        # Auto-update only the selected entries to "Queued"
                         all_entry_ids = []
                         for cluster in selected_clusters:
                             all_entry_ids.extend(cluster["entry_ids"])
