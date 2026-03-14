@@ -22,7 +22,7 @@ BACKLOG_TAB = "Inbound_Backlog"
 BACKLOG_HEADERS = ["ID", "Date", "URL", "Reflection", "Category", "Status"]
 
 BOOK_TAB = "Book_Ledger"
-BOOK_HEADERS = ["Title", "Link", "Categories", "Last_Used", "Times_Used"]
+BOOK_HEADERS = ["Title", "Link", "Categories", "Last_Used", "Times_Used", "Description", "Store"]
 
 DRAFT_TAB = "Draft_State"
 DRAFT_HEADERS = ["Section", "Content", "Last_Modified"]
@@ -31,7 +31,7 @@ CONFIG_TAB = "Config"
 CONFIG_HEADERS = ["Setting", "Value"]
 
 EPISODES_TAB = "Published_Episodes"
-EPISODES_HEADERS = ["Episode_ID", "Publish_Date", "Title", "Entry_IDs"]
+EPISODES_HEADERS = ["Episode_ID", "Publish_Date", "Title", "Entry_IDs", "Affiliate_Books"]
 
 # All tabs and their headers, grouped for easy iteration
 ALL_TABS = {
@@ -96,6 +96,18 @@ def ensure_tabs(spreadsheet):
             if not first_row:
                 # Empty tab, add headers
                 worksheet.update([headers], "A1")
+            elif len(first_row) < len(headers):
+                # Schema migration: tab has fewer columns than the current definition.
+                # This happens when we add new columns (e.g., Description + Store to
+                # Book_Ledger). We widen the sheet first, then append the missing headers.
+                if worksheet.col_count < len(headers):
+                    worksheet.resize(cols=len(headers))
+                missing = headers[len(first_row):]
+                start_col = chr(ord("A") + len(first_row))
+                end_col = chr(ord("A") + len(headers) - 1)
+                worksheet.update(
+                    [missing], f"{start_col}1:{end_col}1"
+                )
 
     # Clean up: remove the default "Sheet1" tab that Google creates
     # (only if our tabs exist, so we don't accidentally delete the only tab)
@@ -202,11 +214,20 @@ def read_book_ledger(spreadsheet):
     return worksheet.get_all_records()
 
 
-def add_to_book_ledger(spreadsheet, title, link, categories):
+def add_to_book_ledger(spreadsheet, title, link, categories,
+                       description="", store=""):
     """
     Adds a book/resource to the Book_Ledger, after checking for duplicates.
 
     Deduplicates by the Link column (column 2).
+
+    Args:
+        spreadsheet: The active spreadsheet
+        title: Book title
+        link: Affiliate link URL
+        categories: Category string (e.g., "Philosophy", "AI")
+        description: Personal blurb/recommendation text
+        store: Store indicator ("AZ" for Amazon, "BS" for Bookstore.org, or "")
 
     Returns:
         A tuple of (success: bool, message: str)
@@ -214,18 +235,80 @@ def add_to_book_ledger(spreadsheet, title, link, categories):
     worksheet = spreadsheet.worksheet(BOOK_TAB)
 
     # Check for duplicate links
-    try:
-        cell = worksheet.find(link, in_column=2)
-        if cell:
-            return (False, f"This link already exists (row {cell.row}). Skipping.")
-    except gspread.exceptions.CellNotFound:
-        pass
+    if link:
+        try:
+            cell = worksheet.find(link, in_column=2)
+            if cell:
+                return (False, f"'{title}' already exists (row {cell.row}). Skipping.")
+        except gspread.exceptions.CellNotFound:
+            pass
 
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    row = [title, link, categories, date_str, 0]  # Times_Used starts at 0
+    # Last_Used starts empty (set only when used in an episode). Times_Used = 0.
+    row = [title, link, categories, "", 0, description, store]
 
     worksheet.append_row(row, value_input_option="USER_ENTERED")
     return (True, f"Added '{title}' to the Book Ledger.")
+
+
+def update_book_ledger_entry(spreadsheet, row_number, updated_fields):
+    """
+    Updates specific fields for a book at the given sheet row number.
+
+    Args:
+        spreadsheet: The active spreadsheet
+        row_number: The actual row number in the sheet (1-based, including header)
+        updated_fields: A dict of field names → new values.
+                        Only Title, Link, Categories, Description, Store are editable.
+    """
+    worksheet = spreadsheet.worksheet(BOOK_TAB)
+    editable = {"Title", "Link", "Categories", "Description", "Store"}
+
+    for field_name, new_value in updated_fields.items():
+        if field_name in editable:
+            col_index = BOOK_HEADERS.index(field_name) + 1  # 1-based
+            worksheet.update_cell(row_number, col_index, new_value)
+
+
+def delete_book_ledger_entry(spreadsheet, row_number):
+    """
+    Deletes a book row from the Book_Ledger tab.
+
+    Args:
+        spreadsheet: The active spreadsheet
+        row_number: The actual row number in the sheet (1-based)
+    """
+    worksheet = spreadsheet.worksheet(BOOK_TAB)
+    worksheet.delete_rows(row_number)
+
+
+def update_book_usage(spreadsheet, book_titles):
+    """
+    Updates Last_Used and Times_Used for books that were included in a published episode.
+
+    Called during publish to track which books have been recommended recently
+    and how many times total.
+
+    Args:
+        spreadsheet: The active spreadsheet
+        book_titles: List of book title strings to update
+    """
+    worksheet = spreadsheet.worksheet(BOOK_TAB)
+    last_used_col = BOOK_HEADERS.index("Last_Used") + 1
+    times_used_col = BOOK_HEADERS.index("Times_Used") + 1
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    for title in book_titles:
+        try:
+            cell = worksheet.find(title, in_column=1)
+            if cell:
+                # Update Last_Used to today
+                worksheet.update_cell(cell.row, last_used_col, today)
+                # Increment Times_Used
+                current_times = worksheet.cell(cell.row, times_used_col).value
+                new_times = int(current_times or 0) + 1
+                worksheet.update_cell(cell.row, times_used_col, new_times)
+        except gspread.exceptions.CellNotFound:
+            pass  # Book not found — skip silently
 
 
 # --- Publication Discovery ---
@@ -395,17 +478,20 @@ def save_config(spreadsheet, config_dict):
 # --- Published Episodes Operations ---
 
 
-def publish_episode(spreadsheet, sections, entry_ids):
+def publish_episode(spreadsheet, sections, entry_ids, affiliate_book_titles=None):
     """
     Publishes the current draft as an episode.
 
     Records the episode in the Published_Episodes tab, updates all included
-    entries from Queued to Used, and clears the draft.
+    entries from Queued to Used, updates affiliate book usage stats, and
+    clears the draft.
 
     Args:
         spreadsheet: The active spreadsheet
         sections: List of section dicts ({"section": str, "content": str})
         entry_ids: List of entry IDs (ints) used in this episode
+        affiliate_book_titles: Optional list of book title strings that were
+                               included as affiliate recommendations
     """
     worksheet = spreadsheet.worksheet(EPISODES_TAB)
 
@@ -413,21 +499,26 @@ def publish_episode(spreadsheet, sections, entry_ids):
     all_values = worksheet.get_all_values()
     next_id = len(all_values)  # Same pattern as backlog IDs
 
-    # Build a title from the section names (skip Intro/Closing/Footer)
+    # Build a title from the section names (skip Intro/Closing/Footer/Affiliate Picks)
     section_names = [
         s["section"] for s in sections
-        if s["section"] not in ("Intro", "Closing", "Footer")
+        if s["section"] not in ("Intro", "Closing", "Footer", "Affiliate Picks")
     ]
     title = " | ".join(section_names) if section_names else "Newsletter"
 
     date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     entry_ids_str = ",".join(str(eid) for eid in entry_ids)
+    affiliate_str = ",".join(affiliate_book_titles) if affiliate_book_titles else ""
 
-    row = [next_id, date_str, title, entry_ids_str]
+    row = [next_id, date_str, title, entry_ids_str, affiliate_str]
     worksheet.append_row(row, value_input_option="USER_ENTERED")
 
     # Mark entries as Used
     batch_update_backlog_statuses(spreadsheet, entry_ids, "Used")
+
+    # Update affiliate book usage stats (Last_Used + Times_Used)
+    if affiliate_book_titles:
+        update_book_usage(spreadsheet, affiliate_book_titles)
 
     # Clear the draft
     clear_draft(spreadsheet)

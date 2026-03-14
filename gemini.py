@@ -188,6 +188,118 @@ Rules:
         return None
 
 
+def suggest_affiliate_books(clusters, book_ledger_entries):
+    """
+    Asks Gemini to score each book in the Book Ledger for relevance to the
+    episode's topic clusters. Returns a ranked list of suggestions.
+
+    Gemini only handles relevance scoring. Recency weighting (how recently a
+    book was used) is applied separately in app.py using the Last_Used and
+    Times_Used fields from the Book Ledger.
+
+    Args:
+        clusters: List of selected cluster dicts with cluster_name, description
+        book_ledger_entries: List of dicts from read_book_ledger() — each has
+                            Title, Link, Categories, Description, Store,
+                            Last_Used, Times_Used
+
+    Returns:
+        A list of suggestion dicts on success, sorted by relevance:
+        [
+            {"title": "Book Title", "relevance_score": 0.92,
+             "reasoning": "Directly relates to..."},
+            ...
+        ]
+        Returns None on failure.
+    """
+    client = get_gemini_client()
+    if not client:
+        return None
+
+    # Build cluster context for the prompt
+    clusters_text = ""
+    for cluster in clusters:
+        clusters_text += (
+            f"- {cluster['cluster_name']}: {cluster['description']}\n"
+        )
+
+    # Build book catalog for the prompt (exclude usage stats — that's handled
+    # in Python, not by Gemini, to keep the scoring purely about relevance)
+    books_text = ""
+    for book in book_ledger_entries:
+        books_text += (
+            f"- Title: {book.get('Title', 'Untitled')}\n"
+            f"  Category: {book.get('Categories', 'N/A')}\n"
+            f"  Description: {book.get('Description', 'N/A')}\n\n"
+        )
+
+    prompt = f"""You are helping select affiliate book recommendations for a newsletter
+called "Nerd Out" — a curated digest about tech, learning, design, and culture.
+
+The current episode covers these themes:
+{clusters_text}
+
+Here is the book catalog:
+{books_text}
+
+Score each book from 0.0 to 1.0 on how relevant it is to THIS episode's themes.
+- 0.8-1.0: Directly related to a cluster topic
+- 0.5-0.7: Somewhat related, tangential connection
+- 0.2-0.4: Loosely related at best
+- 0.0-0.1: No meaningful connection
+
+For each book, provide:
+- title: The exact book title as given
+- relevance_score: A float from 0.0 to 1.0
+- reasoning: A brief 1-sentence explanation of why this score
+
+Return ALL books, even those with low relevance scores.
+"""
+
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "suggestions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "The exact book title",
+                        },
+                        "relevance_score": {
+                            "type": "number",
+                            "description": "Relevance score 0.0-1.0",
+                        },
+                        "reasoning": {
+                            "type": "string",
+                            "description": "Brief explanation of the score",
+                        },
+                    },
+                    "required": ["title", "relevance_score", "reasoning"],
+                },
+            }
+        },
+        "required": ["suggestions"],
+    }
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": response_schema,
+            },
+        )
+        result = json.loads(response.text)
+        return result["suggestions"]
+    except Exception as e:
+        print(f"Gemini affiliate suggestion error: {e}")
+        return None
+
+
 def generate_draft(selected_clusters, entries_lookup, url_titles=None):
     """
     Takes selected clusters and their entries, and asks Gemini to generate

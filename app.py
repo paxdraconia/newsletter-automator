@@ -22,6 +22,173 @@ DEFAULT_CATEGORIES = [
     "Tech", "Science", "Culture", "Business", "AI/ML",
     "Programming", "L&D", "Fun", "Other",
 ]
+
+# Starter books from the Nerd Out Affiliate Links PDF.
+# Link fields are placeholders — update with your actual affiliate URLs
+# via the Book Ledger UI in Settings after importing.
+STARTER_BOOKS = [
+    {
+        "Title": "Design For How People Learn",
+        "Link": "",
+        "Categories": "Philosophy",
+        "Description": "If you work in L&D this is a must read book. This book contains actionable research to reach people and help them learn regardless of the modality. I personally enjoy the chapters on learning evaluation.",
+        "Store": "AZ",
+    },
+    {
+        "Title": "Make It Stick: The Science of Successful Learning",
+        "Link": "",
+        "Categories": "Philosophy",
+        "Description": "This book is targeted at the learner but for those of us in L&D it can be helpful to understand the cognitive science behind learning and study habits. We often work with SMEs to generate new content or facilitate content we're not an expert in. Either way, we need to become credible experts fast.",
+        "Store": "BS",
+    },
+    {
+        "Title": "Creative Acts For Curious People",
+        "Link": "",
+        "Categories": "Philosophy",
+        "Description": "If you're trying to lead a design effort or scoop up some tribal knowledge it's great to put your SME's in creative situations to get them to reveal what they know. One of my favorite exercises from the book is #36, the unpacking exercise. Fantastic book for your desk.",
+        "Store": "BS",
+    },
+    {
+        "Title": "The Timeless Way of Building",
+        "Link": "",
+        "Categories": "Philosophy",
+        "Description": "This book is about architecture, so what is it doing here? The books main argument is that you can understand design better by looking at patterns in how things were done in the past. It advocates looking at the design of a thing to support the whole human and promote their sense of well being.",
+        "Store": "BS",
+    },
+    {
+        "Title": "Map It",
+        "Link": "",
+        "Categories": "Philosophy",
+        "Description": "Cathy Moore's book Map It shows you a practical step by step process that fits with the realities you'll face in business. I highly recommend this to anyone in L&D at any experience level.",
+        "Store": "",
+    },
+    {
+        "Title": "Artificial Intelligence for Learning",
+        "Link": "",
+        "Categories": "AI",
+        "Description": "Donald Clark was working in AI for learning before it was cool. I personally valued this book because it wasn't all just hype. There are case studies of how people applied AI in real life with hard lessons in each.",
+        "Store": "AZ",
+    },
+    {
+        "Title": "Integrating AI into Learning Design and Development",
+        "Link": "",
+        "Categories": "AI",
+        "Description": "An excellent primer for how to think about AI strategically with Learning Design. It has practical real world advice and hands on activities you can use with jr learning designers.",
+        "Store": "AZ",
+    },
+    {
+        "Title": "Caste",
+        "Link": "",
+        "Categories": "DEI",
+        "Description": "If you work in training belonging or discrimination this book will do a lot to give you more of a global frame. I read this during the pandemic and it was a challenging, fascinating and ultimately a timely read.",
+        "Store": "BS",
+    },
+    {
+        "Title": "Mismatch",
+        "Link": "",
+        "Categories": "DEI",
+        "Description": "Mismatch is one of my favorite books. A mismatch between someone's needs and a product causes exclusion. The book provides practices and processes which will help you build more inclusive systems and products. It is critical in L&D to reach everyone.",
+        "Store": "",
+    },
+    {
+        "Title": "Real Talk",
+        "Link": "",
+        "Categories": "Facilitation",
+        "Description": "Bridgett McGowen made an impression on me during a podcast she was on so I picked up one of her books. I found some tips that resonated with me largely because unlike many presenters I'm an introvert and apparently so is the author.",
+        "Store": "",
+    },
+    {
+        "Title": "The Art of Gathering",
+        "Link": "",
+        "Categories": "Facilitation",
+        "Description": "This book gives structure to gatherings that resonate well with me as an introvert and a learning professional. There are lessons for classroom facilitators and designers in general like priming users to set expectations about how the experience itself will be.",
+        "Store": "",
+    },
+    {
+        "Title": "The 2 Hour Cocktail Party",
+        "Link": "",
+        "Categories": "Facilitation",
+        "Description": "On its surface this is a way to engineer social events with a proven formula. Beyond that it has some advice that learning professionals should take to heart. Pilot with a core group. Think about managing the energy of the learner. Create a psychologically safe experience.",
+        "Store": "",
+    },
+    {
+        "Title": "Interface Design for Learning",
+        "Link": "",
+        "Categories": "Elearning",
+        "Description": "This book has detailed descriptions about why various interface components are important to learning as well as academic research backed citations showing why it's important. It gives the theory right next to examples of what it could look like.",
+        "Store": "AZ",
+    },
+    {
+        "Title": "For the Win",
+        "Link": "",
+        "Categories": "Engagement",
+        "Description": "I consider this book to be the best primer for L&D people in gamification because instead of focusing on how to implement points in an elearning it focuses on gamification writ large. How do you use it to solve problems, what are the pitfalls and how you should use it ethically.",
+        "Store": "",
+    },
+    {
+        "Title": "Design is Storytelling",
+        "Link": "",
+        "Categories": "Engagement",
+        "Description": "I found this book incredibly useful in my design, it has a ton of tools and concepts that you can use today. It's presented in an engaging and entertaining way that will keep you flipping through, adding tools to your design toolbelt.",
+        "Store": "AZ",
+    },
+    {
+        "Title": "Fail To Learn",
+        "Link": "",
+        "Categories": "Engagement",
+        "Description": "This book is written by friend of The Nerd Out, Scott Provence. It gives you an excellent formula for both learning and engagement in organisational learning. It looks at it like game loops that you might see in a board or video game but elegantly lays out how you can build engaging practice.",
+        "Store": "",
+    },
+    {
+        "Title": "The DC Comics Guide to Writing Comics",
+        "Link": "",
+        "Categories": "Engagement",
+        "Description": "In instructional design we're expected to keep things new and interesting. Graphic novel, comic book and hero narrative structures every so often keeps things fresh and unexpected for learners. Useful not only for breaking into those modalities but also to think through keeping stories interesting.",
+        "Store": "AZ",
+    },
+    {
+        "Title": "Kirkpatrick's Four Levels of Training Evaluation",
+        "Link": "",
+        "Categories": "Evaluation",
+        "Description": "This book will not teach you everything you need to know about training evaluation but it will get you to a point where you can talk about evaluation with other industry professionals. The 4 levels is as much a part of the lingo as ADDIE.",
+        "Store": "BS",
+    },
+    {
+        "Title": "The Cult of Personality Testing",
+        "Link": "",
+        "Categories": "Evaluation",
+        "Description": "Personality testing is a huge fixture in corporate learning. Knowing their limitations helps prepare you for the inevitable push back you'll get before you deploy. You should go in clear eyed about what these tests can actually do.",
+        "Store": "",
+    },
+    {
+        "Title": "True North, Emerging Leader Edition",
+        "Link": "",
+        "Categories": "Leadership",
+        "Description": "I like this book for learning leaders partly because it encourages leadership as a whole authentic person. I am a big nerd with a big heart. I am not a hyper-efficient corporate guru. There are some great words of wisdom in there.",
+        "Store": "",
+    },
+    {
+        "Title": "Getting to Yes",
+        "Link": "",
+        "Categories": "Leadership",
+        "Description": "This book helped me as an instructional designer to reframe my requests on people's time for what might build mutual advantage and value not just for SMEs but for leaders who own my budget, critical stakeholders and even getting access to do analysis on my audience.",
+        "Store": "AZ",
+    },
+    {
+        "Title": "The Skill Code",
+        "Link": "",
+        "Categories": "Leadership",
+        "Description": "We're going through a demographic and technological change where highly skilled workers are retiring while entry level positions are disappearing. People aren't learning the skills they need through apprenticeship on the job like they used to. This book covers the evidence and what to do about it.",
+        "Store": "AZ",
+    },
+    {
+        "Title": "Engaged: The Neuroscience Behind Creating Productive People in Successful Organizations",
+        "Link": "",
+        "Categories": "Brain",
+        "Description": "This book is research informed, accessible and resonates with my real life experience. When you organize talent and development around the human brain instead of traditional approaches you end up with better business results.",
+        "Store": "AZ",
+    },
+]
 from sheets import (
     get_or_create_spreadsheet,
     ensure_tabs,
@@ -36,6 +203,10 @@ from sheets import (
     read_config,
     save_config,
     publish_episode,
+    read_book_ledger,
+    add_to_book_ledger,
+    update_book_ledger_entry,
+    delete_book_ledger_entry,
 )
 
 # --- Page Configuration ---
@@ -67,6 +238,12 @@ def load_publications(_client, _client_id="default"):
 def load_config(_spreadsheet, spreadsheet_id):
     """Cache config for 60 seconds — categories and settings rarely change mid-session."""
     return read_config(_spreadsheet)
+
+
+@st.cache_data(ttl=30)
+def load_book_ledger(_spreadsheet, spreadsheet_id):
+    """Cache book ledger for 30 seconds — same pattern as load_backlog."""
+    return read_book_ledger(_spreadsheet)
 
 
 @st.cache_resource(ttl=300)
@@ -269,7 +446,7 @@ def render_dashboard():
     edited_df = st.data_editor(
         filtered_df,
         key="backlog_editor",
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         disabled=["ID", "Date", "URL", "Reflection", "Category"],
         column_config={
@@ -565,6 +742,177 @@ def render_cluster_and_draft():
                             st.caption(reflection)
                             st.markdown("---")
 
+        # --- Step 5: Affiliate Book Picks ---
+        st.divider()
+        st.subheader("Step 5: Affiliate Book Picks")
+        st.caption(
+            "Suggest a book recommendation to include in this episode. "
+            "Gemini scores each book for relevance to the episode's themes, "
+            "and books that haven't been used recently get a boost."
+        )
+
+        # Only allow suggestions when we have cluster context
+        selected_clusters_for_aff = st.session_state.get("selected_clusters", [])
+
+        if st.button("Suggest Affiliate Books", key="suggest_affiliate_btn"):
+            aff_books = load_book_ledger(spreadsheet, spreadsheet.id)
+            if not aff_books:
+                st.warning(
+                    "No books in the Book Ledger. "
+                    "Add books in Settings first."
+                )
+            elif not selected_clusters_for_aff:
+                st.warning(
+                    "No cluster context available. Generate a draft first "
+                    "so Gemini knows what topics to match against."
+                )
+            else:
+                with st.spinner("Gemini is scoring book relevance..."):
+                    from gemini import suggest_affiliate_books
+                    suggestions = suggest_affiliate_books(
+                        selected_clusters_for_aff, aff_books
+                    )
+
+                if suggestions is None:
+                    st.error("Affiliate suggestion failed. Check your Gemini API key.")
+                else:
+                    # Apply recency weighting in Python
+                    # Build a lookup of book metadata by title
+                    book_meta = {b["Title"]: b for b in aff_books}
+                    from datetime import datetime, timedelta
+                    now = datetime.now()
+                    recency_cutoff = now - timedelta(days=60)
+
+                    for s in suggestions:
+                        meta = book_meta.get(s["title"], {})
+                        times_used = int(meta.get("Times_Used", 0) or 0)
+                        last_used_str = str(meta.get("Last_Used", ""))
+
+                        # Recency adjustment
+                        if times_used == 0:
+                            # Never used — bonus
+                            s["recency_adj"] = 0.1
+                            s["recency_flag"] = "Never used"
+                        elif last_used_str:
+                            try:
+                                last_used_date = datetime.strptime(
+                                    last_used_str, "%Y-%m-%d"
+                                )
+                                if last_used_date > recency_cutoff:
+                                    s["recency_adj"] = -0.15
+                                    s["recency_flag"] = "Used recently"
+                                else:
+                                    s["recency_adj"] = 0.0
+                                    s["recency_flag"] = "Not used recently"
+                            except ValueError:
+                                s["recency_adj"] = 0.0
+                                s["recency_flag"] = "Unknown"
+                        else:
+                            s["recency_adj"] = 0.0
+                            s["recency_flag"] = "Not used recently"
+
+                        # Final score
+                        raw = float(s.get("relevance_score", 0))
+                        s["final_score"] = min(1.0, max(0.0, raw + s["recency_adj"]))
+
+                        # Attach metadata for display
+                        s["store"] = meta.get("Store", "")
+                        s["link"] = meta.get("Link", "")
+                        s["description"] = meta.get("Description", "")
+                        s["times_used"] = times_used
+
+                    # Sort by final score descending
+                    suggestions.sort(key=lambda x: x["final_score"], reverse=True)
+                    st.session_state["affiliate_suggestions"] = suggestions
+
+        # Display suggestions if they exist
+        if "affiliate_suggestions" in st.session_state:
+            suggestions = st.session_state["affiliate_suggestions"]
+            st.write(f"**{len(suggestions)} books** scored. Select 1–3 to include:")
+
+            for idx, s in enumerate(suggestions):
+                score_pct = int(s["final_score"] * 100)
+                store_badge = f" [{s['store']}]" if s["store"] else ""
+                recency_label = f" — {s['recency_flag']}"
+                if s["times_used"] > 0:
+                    recency_label += f" ({s['times_used']}x)"
+
+                st.checkbox(
+                    f"**{s['title']}**{store_badge} — "
+                    f"Score: {score_pct}%{recency_label}",
+                    value=False,
+                    key=f"affiliate_pick_{idx}",
+                )
+
+                # Show reasoning + blurb in a compact expander
+                with st.expander(f"Details: {s['title']}", expanded=False):
+                    st.caption(f"Gemini says: {s['reasoning']}")
+                    if s["description"]:
+                        st.markdown(f"**Your blurb:** {s['description'][:200]}...")
+                    if s["link"]:
+                        st.markdown(f"Link: {s['link']}")
+                    else:
+                        st.caption("No affiliate link set — add one in Settings > Book Ledger")
+
+            # Insert button
+            if st.button("Insert Affiliate Section", key="insert_affiliate_btn"):
+                # Collect checked books (max 3)
+                picked = []
+                for idx, s in enumerate(suggestions):
+                    if st.session_state.get(f"affiliate_pick_{idx}", False):
+                        picked.append(s)
+                    if len(picked) >= 3:
+                        break
+
+                if not picked:
+                    st.warning("Select at least one book to insert.")
+                else:
+                    # Build the affiliate section content from pre-written blurbs
+                    lines = ["## Affiliate Picks\n"]
+                    affiliate_titles = []
+                    for book in picked:
+                        title = book["title"]
+                        link = book.get("link", "")
+                        desc = book.get("description", "")
+                        affiliate_titles.append(title)
+
+                        if link:
+                            lines.append(f"> [{title}]({link})\n")
+                        else:
+                            lines.append(f"> **{title}** *(add affiliate link in Settings)*\n")
+                        if desc:
+                            lines.append(f"{desc}\n")
+
+                    affiliate_content = "\n".join(lines)
+
+                    # Insert before Footer (if exists), otherwise at the end
+                    sections = st.session_state["draft_sections"]
+                    # Remove any existing Affiliate Picks section first
+                    sections = [
+                        s for s in sections
+                        if s["section"] != "Affiliate Picks"
+                    ]
+                    footer_idx = next(
+                        (i for i, s in enumerate(sections)
+                         if s["section"] == "Footer"),
+                        None
+                    )
+                    new_section = {
+                        "section": "Affiliate Picks",
+                        "content": affiliate_content,
+                    }
+                    if footer_idx is not None:
+                        sections.insert(footer_idx, new_section)
+                    else:
+                        sections.append(new_section)
+
+                    st.session_state["draft_sections"] = sections
+                    st.session_state["affiliate_book_titles"] = affiliate_titles
+                    st.success(
+                        f"Inserted {len(picked)} book(s) as 'Affiliate Picks' section!"
+                    )
+                    st.rerun()
+
         # --- Save, Preview, Clear, and Publish buttons ---
         btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
 
@@ -593,6 +941,8 @@ def render_cluster_and_draft():
                     "draft_entries_lookup",
                     "draft_entry_ids",
                     "confirm_publish",
+                    "affiliate_suggestions",
+                    "affiliate_book_titles",
                 ]:
                     st.session_state.pop(key, None)
                 st.info("Draft cleared. You can start fresh!")
@@ -612,9 +962,16 @@ def render_cluster_and_draft():
 
         # --- Publish Confirmation ---
         if st.session_state.get("confirm_publish", False):
+            aff_titles = st.session_state.get("affiliate_book_titles", [])
+            aff_note = ""
+            if aff_titles:
+                aff_note = (
+                    f" Affiliate book(s) will be tracked: "
+                    f"**{', '.join(aff_titles)}**."
+                )
             st.warning(
                 "Are you sure you want to publish? This will mark all included "
-                "entries as **Used** and record the episode."
+                f"entries as **Used** and record the episode.{aff_note}"
             )
             conf_col1, conf_col2 = st.columns(2)
             with conf_col1:
@@ -623,6 +980,9 @@ def render_cluster_and_draft():
                         spreadsheet,
                         edited_sections,
                         st.session_state["draft_entry_ids"],
+                        affiliate_book_titles=st.session_state.get(
+                            "affiliate_book_titles", []
+                        ),
                     )
                     for key in [
                         "draft_sections",
@@ -634,6 +994,8 @@ def render_cluster_and_draft():
                         "draft_entries_lookup",
                         "draft_entry_ids",
                         "confirm_publish",
+                        "affiliate_suggestions",
+                        "affiliate_book_titles",
                     ]:
                         st.session_state.pop(key, None)
                     st.cache_data.clear()
@@ -753,6 +1115,165 @@ def render_settings():
         })
         st.cache_data.clear()
         st.success("Settings saved!")
+
+    # --- Book Ledger Management ---
+    st.divider()
+    st.header("Book Ledger")
+    st.caption(
+        "Manage your affiliate book recommendations. These books are suggested "
+        "during draft generation based on relevance to the episode's topics. "
+        "Last Used and Times Used are updated automatically when you publish."
+    )
+
+    books = load_book_ledger(spreadsheet, spreadsheet.id)
+
+    if books:
+        books_df = pd.DataFrame(books)
+
+        # Ensure all expected columns exist (handles migration edge cases)
+        for col in ["Description", "Store"]:
+            if col not in books_df.columns:
+                books_df[col] = ""
+
+        edited_books = st.data_editor(
+            books_df,
+            key="book_ledger_editor",
+            width="stretch",
+            hide_index=True,
+            disabled=["Last_Used", "Times_Used"],
+            column_config={
+                "Title": st.column_config.TextColumn("Title", width="medium"),
+                "Link": st.column_config.LinkColumn("Affiliate Link", width="medium"),
+                "Categories": st.column_config.TextColumn("Category", width="small"),
+                "Description": st.column_config.TextColumn("Blurb", width="large"),
+                "Store": st.column_config.SelectboxColumn(
+                    "Store",
+                    options=["", "AZ", "BS"],
+                    help="AZ = Amazon, BS = Bookstore.org",
+                    width="small",
+                ),
+                "Last_Used": st.column_config.TextColumn(
+                    "Last Used", width="small",
+                ),
+                "Times_Used": st.column_config.NumberColumn(
+                    "Times Used", width="small",
+                ),
+            },
+            num_rows="fixed",
+        )
+
+        # Save book edits
+        book_col1, book_col2 = st.columns(2)
+        with book_col1:
+            if st.button("Save Book Changes", key="save_books_btn"):
+                editor_state = st.session_state.get("book_ledger_editor", {})
+                edited_rows = editor_state.get("edited_rows", {})
+
+                if not edited_rows:
+                    st.info("No book changes to save.")
+                else:
+                    save_count = 0
+                    for row_index_str, changes in edited_rows.items():
+                        row_index = int(row_index_str)
+                        # Sheet row = DataFrame index + 2 (row 1 = headers)
+                        sheet_row = row_index + 2
+                        update_book_ledger_entry(spreadsheet, sheet_row, changes)
+                        save_count += 1
+                    st.success(f"Updated {save_count} book(s)!")
+                    st.cache_data.clear()
+                    st.rerun()
+
+        with book_col2:
+            # Delete selected book
+            book_titles_for_delete = ["(select a book)"] + [
+                b.get("Title", f"Row {i}") for i, b in enumerate(books)
+            ]
+            delete_selection = st.selectbox(
+                "Delete a book",
+                options=book_titles_for_delete,
+                key="delete_book_select",
+                label_visibility="collapsed",
+            )
+            if st.button("Delete Selected Book", key="delete_book_btn"):
+                if delete_selection != "(select a book)":
+                    # Find the index of this book
+                    idx = book_titles_for_delete.index(delete_selection) - 1
+                    sheet_row = idx + 2  # +2 for header
+                    delete_book_ledger_entry(spreadsheet, sheet_row)
+                    st.success(f"Deleted '{delete_selection}'")
+                    st.cache_data.clear()
+                    st.rerun()
+    else:
+        st.info("No books in the ledger yet. Add one below or import starter books.")
+
+    # --- Add a single book ---
+    with st.expander("Add a Book"):
+        with st.form(key="add_book_form", clear_on_submit=True):
+            book_title = st.text_input("Title", placeholder="e.g., Atomic Habits")
+            book_link = st.text_input(
+                "Affiliate Link", placeholder="https://amzn.to/..."
+            )
+            book_category = st.text_input(
+                "Category", placeholder="e.g., Leadership, AI, Philosophy"
+            )
+            book_store = st.selectbox(
+                "Store", options=["", "AZ", "BS"],
+                help="AZ = Amazon, BS = Bookstore.org"
+            )
+            book_description = st.text_area(
+                "Description / Blurb",
+                placeholder="Your personal recommendation text...",
+                height=100,
+            )
+            if st.form_submit_button("Add Book", type="primary"):
+                if book_title:
+                    success, msg = add_to_book_ledger(
+                        spreadsheet, book_title.strip(), book_link.strip(),
+                        book_category.strip(), book_description.strip(),
+                        book_store,
+                    )
+                    if success:
+                        st.success(msg)
+                        st.cache_data.clear()
+                    else:
+                        st.warning(msg)
+                else:
+                    st.error("Title is required.")
+
+    # --- Import starter books from PDF data ---
+    with st.expander("Import Starter Books (from Nerd Out Affiliate Links PDF)"):
+        st.caption(
+            f"Import {len(STARTER_BOOKS)} pre-configured books from the Nerd Out "
+            "affiliate links list. Titles, categories, descriptions, and store "
+            "indicators are pre-filled. **You'll need to paste in the actual "
+            "affiliate URLs** via the edit table above after importing."
+        )
+
+        # Show preview
+        preview_df = pd.DataFrame(STARTER_BOOKS)[
+            ["Title", "Categories", "Store"]
+        ]
+        st.dataframe(preview_df, hide_index=True, width=600)
+
+        if st.button("Import All Starter Books", key="import_starter_btn"):
+            added = 0
+            skipped = 0
+            for book in STARTER_BOOKS:
+                success, _ = add_to_book_ledger(
+                    spreadsheet,
+                    book["Title"], book["Link"], book["Categories"],
+                    book["Description"], book["Store"],
+                )
+                if success:
+                    added += 1
+                else:
+                    skipped += 1
+            st.success(
+                f"Imported {added} books! "
+                + (f"({skipped} skipped as duplicates)" if skipped else "")
+            )
+            st.cache_data.clear()
+            st.rerun()
 
 
 # --- Page Routing ---
