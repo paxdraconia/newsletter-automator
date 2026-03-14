@@ -57,6 +57,25 @@ def load_backlog(_spreadsheet, spreadsheet_id):
     return read_backlog(_spreadsheet)
 
 
+@st.cache_data(ttl=60)
+def load_publications(_client, _client_id="default"):
+    """Cache publication list for 60 seconds — avoids re-listing spreadsheets on every rerun."""
+    return list_publications(_client)
+
+
+@st.cache_data(ttl=60)
+def load_config(_spreadsheet, spreadsheet_id):
+    """Cache config for 60 seconds — categories and settings rarely change mid-session."""
+    return read_config(_spreadsheet)
+
+
+@st.cache_resource(ttl=300)
+def ensure_tabs_cached(_spreadsheet, spreadsheet_id):
+    """Ensure tabs exist, cached for 5 minutes. Tabs only need creating once."""
+    ensure_tabs(_spreadsheet)
+    return True  # cache_resource needs a return value
+
+
 # --- Authentication ---
 # This runs once and is cached. If it fails, config.py shows an error and stops.
 client = get_gspread_client()
@@ -67,7 +86,7 @@ st.sidebar.title("Nerd Out Automator")
 
 # Publication selector
 # First, discover what publications exist (sheets ending in _DB)
-available_publications = list_publications(client)
+available_publications = load_publications(client)
 
 # If no publications exist yet, start with the default
 if not available_publications:
@@ -119,12 +138,12 @@ with st.sidebar.expander("Manage Publications"):
 # re-authenticates, and retry once. This makes the app self-healing.
 try:
     spreadsheet = get_or_create_spreadsheet(client, selected_pub)
-    ensure_tabs(spreadsheet)
+    ensure_tabs_cached(spreadsheet, spreadsheet.id)
 except Exception:
     st.cache_resource.clear()
     client = get_gspread_client()
     spreadsheet = get_or_create_spreadsheet(client, selected_pub)
-    ensure_tabs(spreadsheet)
+    ensure_tabs_cached(spreadsheet, spreadsheet.id)
 
 
 # --- Page: Add Content ---
@@ -137,7 +156,8 @@ def render_ingest_form():
     )
 
     # Load categories from config (custom categories managed in Settings)
-    config = read_config(spreadsheet)
+    # Uses cached version to avoid API calls on every rerun
+    config = load_config(spreadsheet, spreadsheet.id)
     cat_json = config.get("categories", "")
     categories = json.loads(cat_json) if cat_json else DEFAULT_CATEGORIES
 
@@ -446,7 +466,7 @@ def render_cluster_and_draft():
                         )
                     else:
                         # Auto-assemble: prepend intro, append footer from Settings
-                        config = read_config(spreadsheet)
+                        config = load_config(spreadsheet, spreadsheet.id)
                         default_intro = config.get("default_intro", "")
                         default_footer = config.get("default_footer", "")
 
@@ -649,8 +669,9 @@ def render_settings():
         "`[Nerd Out Gear](https://your-merch-link.com)`"
     )
 
-    # Load existing config (no cache — this page needs fresh values after saving)
-    config = read_config(spreadsheet)
+    # Load existing config — cached, but the cache is cleared after every save
+    # (st.cache_data.clear() runs when Save Settings / Add / Delete is clicked)
+    config = load_config(spreadsheet, spreadsheet.id)
 
     default_intro = st.text_area(
         "Default Intro",
@@ -696,7 +717,7 @@ def render_settings():
             if st.button("❌", key=f"del_cat_{i}"):
                 current_categories.pop(i)
                 # Read-modify-write: preserve other config values
-                full_config = read_config(spreadsheet)
+                full_config = load_config(spreadsheet, spreadsheet.id)
                 full_config["categories"] = json.dumps(current_categories)
                 save_config(spreadsheet, full_config)
                 st.cache_data.clear()
@@ -714,7 +735,7 @@ def render_settings():
                 clean_cat = new_cat.strip()
                 if clean_cat not in current_categories:
                     current_categories.append(clean_cat)
-                    full_config = read_config(spreadsheet)
+                    full_config = load_config(spreadsheet, spreadsheet.id)
                     full_config["categories"] = json.dumps(current_categories)
                     save_config(spreadsheet, full_config)
                     st.cache_data.clear()
