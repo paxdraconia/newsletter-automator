@@ -30,12 +30,16 @@ DRAFT_HEADERS = ["Section", "Content", "Last_Modified"]
 CONFIG_TAB = "Config"
 CONFIG_HEADERS = ["Setting", "Value"]
 
+EPISODES_TAB = "Published_Episodes"
+EPISODES_HEADERS = ["Episode_ID", "Publish_Date", "Title", "Entry_IDs"]
+
 # All tabs and their headers, grouped for easy iteration
 ALL_TABS = {
     BACKLOG_TAB: BACKLOG_HEADERS,
     BOOK_TAB: BOOK_HEADERS,
     DRAFT_TAB: DRAFT_HEADERS,
     CONFIG_TAB: CONFIG_HEADERS,
+    EPISODES_TAB: EPISODES_HEADERS,
 }
 
 
@@ -145,12 +149,14 @@ def add_to_backlog(spreadsheet, url, reflection, category):
     worksheet = spreadsheet.worksheet(BACKLOG_TAB)
 
     # Check for duplicates by searching the URL column (column 3)
-    try:
-        cell = worksheet.find(url, in_column=3)
-        if cell:
-            return (False, f"This URL already exists (row {cell.row}). Skipping.")
-    except gspread.exceptions.CellNotFound:
-        pass  # URL not found — good, we can add it
+    # Skip deduplication when URL is empty (reflection-only entries can't be deduped)
+    if url:
+        try:
+            cell = worksheet.find(url, in_column=3)
+            if cell:
+                return (False, f"This URL already exists (row {cell.row}). Skipping.")
+        except gspread.exceptions.CellNotFound:
+            pass  # URL not found — good, we can add it
 
     # Generate a simple incrementing ID
     # We count all rows (including header) so row count = next ID
@@ -384,3 +390,44 @@ def save_config(spreadsheet, config_dict):
         worksheet.update(
             rows, f"A2:B{1 + len(rows)}", value_input_option="USER_ENTERED"
         )
+
+
+# --- Published Episodes Operations ---
+
+
+def publish_episode(spreadsheet, sections, entry_ids):
+    """
+    Publishes the current draft as an episode.
+
+    Records the episode in the Published_Episodes tab, updates all included
+    entries from Queued to Used, and clears the draft.
+
+    Args:
+        spreadsheet: The active spreadsheet
+        sections: List of section dicts ({"section": str, "content": str})
+        entry_ids: List of entry IDs (ints) used in this episode
+    """
+    worksheet = spreadsheet.worksheet(EPISODES_TAB)
+
+    # Auto-increment episode ID
+    all_values = worksheet.get_all_values()
+    next_id = len(all_values)  # Same pattern as backlog IDs
+
+    # Build a title from the section names (skip Intro/Closing/Footer)
+    section_names = [
+        s["section"] for s in sections
+        if s["section"] not in ("Intro", "Closing", "Footer")
+    ]
+    title = " | ".join(section_names) if section_names else "Newsletter"
+
+    date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    entry_ids_str = ",".join(str(eid) for eid in entry_ids)
+
+    row = [next_id, date_str, title, entry_ids_str]
+    worksheet.append_row(row, value_input_option="USER_ENTERED")
+
+    # Mark entries as Used
+    batch_update_backlog_statuses(spreadsheet, entry_ids, "Used")
+
+    # Clear the draft
+    clear_draft(spreadsheet)

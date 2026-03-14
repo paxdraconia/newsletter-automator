@@ -12,9 +12,16 @@ How Streamlit works (important for understanding this code):
   that survives page refreshes).
 """
 
+import json
 import streamlit as st
 import pandas as pd
 from config import get_gspread_client, DEFAULT_PUBLICATION
+
+# Default categories — used as a fallback when no custom categories are saved.
+DEFAULT_CATEGORIES = [
+    "Tech", "Science", "Culture", "Business", "AI/ML",
+    "Programming", "L&D", "Fun", "Other",
+]
 from sheets import (
     get_or_create_spreadsheet,
     ensure_tabs,
@@ -28,6 +35,7 @@ from sheets import (
     batch_update_backlog_statuses,
     read_config,
     save_config,
+    publish_episode,
 )
 
 # --- Page Configuration ---
@@ -121,12 +129,17 @@ except Exception:
 
 # --- Page: Add Content ---
 def render_ingest_form():
-    """The manual content ingest form — paste a URL and your reflection."""
+    """The manual content ingest form — paste a URL and/or your reflection."""
     st.header("Add Content")
     st.caption(
-        "Paste a URL and your reflection to add it to the backlog. "
-        "The app will check for duplicates automatically."
+        "Paste a URL and/or your reflection to add it to the backlog. "
+        "URL is optional — you can submit a reflection-only entry."
     )
+
+    # Load categories from config (custom categories managed in Settings)
+    config = read_config(spreadsheet)
+    cat_json = config.get("categories", "")
+    categories = json.loads(cat_json) if cat_json else DEFAULT_CATEGORIES
 
     # st.form() batches all the inputs together. Nothing happens until you
     # click "Add to Backlog". Without a form, every keystroke would trigger
@@ -135,6 +148,7 @@ def render_ingest_form():
         url_input = st.text_input(
             "URL",
             placeholder="https://example.com/interesting-article",
+            help="Optional — leave blank for reflection-only entries.",
         )
 
         reflection_input = st.text_area(
@@ -143,32 +157,25 @@ def render_ingest_form():
             height=150,
         )
 
-        # Predefined categories for consistency. You can add more here later.
-        categories = [
-            "Tech",
-            "Science",
-            "Culture",
-            "Business",
-            "AI/ML",
-            "Programming",
-            "L&D",
-            "Fun",
-            "Other",
-        ]
         category_input = st.selectbox("Category", options=categories)
 
         submitted = st.form_submit_button("Add to Backlog", type="primary")
 
     if submitted:
-        # Validate the URL
-        if not url_input or not url_input.strip().startswith(("http://", "https://")):
-            st.error("Please enter a valid URL starting with http:// or https://")
+        url_clean = url_input.strip() if url_input else ""
+        reflection_clean = reflection_input.strip() if reflection_input else ""
+
+        # Must provide at least a URL or a reflection
+        if not url_clean and not reflection_clean:
+            st.error("Please enter a URL, a reflection, or both.")
             return
 
-        url_clean = url_input.strip()
-        reflection_clean = reflection_input.strip()
+        # If a URL is provided, validate it starts with http/https
+        if url_clean and not url_clean.startswith(("http://", "https://")):
+            st.error("URL must start with http:// or https://")
+            return
 
-        if not reflection_clean:
+        if url_clean and not reflection_clean:
             st.info("Tip: Adding a reflection helps you remember why you saved this!")
 
         # Save to Google Sheets
@@ -462,10 +469,20 @@ def render_cluster_and_draft():
                         st.session_state["draft_sections"] = draft_sections
                         st.success("Draft generated! Edit it below.")
 
+                        # Store section-to-entry mapping so reflections
+                        # can be displayed alongside each draft section
+                        section_entry_map = {
+                            c["cluster_name"]: c["entry_ids"]
+                            for c in selected_clusters
+                        }
+                        st.session_state["section_entry_map"] = section_entry_map
+                        st.session_state["draft_entries_lookup"] = entries_lookup
+
                         # Auto-update only the selected entries to "Queued"
                         all_entry_ids = []
                         for cluster in selected_clusters:
                             all_entry_ids.extend(cluster["entry_ids"])
+                        st.session_state["draft_entry_ids"] = all_entry_ids
                         batch_update_backlog_statuses(
                             spreadsheet, all_entry_ids, "Queued"
                         )
@@ -493,6 +510,11 @@ def render_cluster_and_draft():
         draft_sections = st.session_state["draft_sections"]
         edited_sections = []
 
+        # Load reflection mapping (only available for freshly generated drafts,
+        # not for drafts loaded from Google Sheets — that's expected)
+        section_entry_map = st.session_state.get("section_entry_map", {})
+        draft_entries = st.session_state.get("draft_entries_lookup", {})
+
         for i, section in enumerate(draft_sections):
             st.markdown(f"### {section['section']}")
             edited_content = st.text_area(
@@ -507,8 +529,24 @@ def render_cluster_and_draft():
                 "content": edited_content,
             })
 
-        # --- Save, Preview, and Clear buttons ---
-        btn_col1, btn_col2, btn_col3 = st.columns(3)
+            # Show original reflections for reference (if mapping exists)
+            entry_ids_for_section = section_entry_map.get(section["section"], [])
+            if entry_ids_for_section and draft_entries:
+                with st.expander(
+                    f"Your reflections ({len(entry_ids_for_section)} entries)"
+                ):
+                    for eid in entry_ids_for_section:
+                        entry = draft_entries.get(eid, {})
+                        if entry:
+                            url = entry.get("URL", "")
+                            reflection = entry.get("Reflection", "No reflection")
+                            if url:
+                                st.markdown(f"**{url}**")
+                            st.caption(reflection)
+                            st.markdown("---")
+
+        # --- Save, Preview, Clear, and Publish buttons ---
+        btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
 
         with btn_col1:
             if st.button("Save Draft", type="primary"):
@@ -531,10 +569,60 @@ def render_cluster_and_draft():
                     "cluster_entries",
                     "selected_clusters",
                     "show_preview",
+                    "section_entry_map",
+                    "draft_entries_lookup",
+                    "draft_entry_ids",
+                    "confirm_publish",
                 ]:
                     st.session_state.pop(key, None)
                 st.info("Draft cleared. You can start fresh!")
                 st.rerun()
+
+        with btn_col4:
+            # Publish is only available when we know which entries to mark as Used
+            draft_entry_ids = st.session_state.get("draft_entry_ids", [])
+            if st.button(
+                "Publish",
+                disabled=not draft_entry_ids,
+                help="Mark entries as Used, record the episode, and clear the draft."
+                if draft_entry_ids else
+                "Not available — draft was loaded from saved state without entry tracking.",
+            ):
+                st.session_state["confirm_publish"] = True
+
+        # --- Publish Confirmation ---
+        if st.session_state.get("confirm_publish", False):
+            st.warning(
+                "Are you sure you want to publish? This will mark all included "
+                "entries as **Used** and record the episode."
+            )
+            conf_col1, conf_col2 = st.columns(2)
+            with conf_col1:
+                if st.button("Yes, Publish"):
+                    publish_episode(
+                        spreadsheet,
+                        edited_sections,
+                        st.session_state["draft_entry_ids"],
+                    )
+                    for key in [
+                        "draft_sections",
+                        "clusters",
+                        "cluster_entries",
+                        "selected_clusters",
+                        "show_preview",
+                        "section_entry_map",
+                        "draft_entries_lookup",
+                        "draft_entry_ids",
+                        "confirm_publish",
+                    ]:
+                        st.session_state.pop(key, None)
+                    st.cache_data.clear()
+                    st.success("Published! Entries marked as Used.")
+                    st.rerun()
+            with conf_col2:
+                if st.button("Cancel"):
+                    st.session_state.pop("confirm_publish", None)
+                    st.rerun()
 
         # --- Markdown Preview ---
         if st.session_state.get("show_preview", False):
@@ -591,10 +679,56 @@ def render_settings():
             st.markdown(default_footer)
         st.divider()
 
+    # --- Manage Categories ---
+    st.divider()
+    st.subheader("Manage Categories")
+    st.caption("Add, remove, or reorder the categories used in the Add Content form.")
+
+    cat_json = config.get("categories", "")
+    current_categories = json.loads(cat_json) if cat_json else list(DEFAULT_CATEGORIES)
+
+    # Display each category with a delete button
+    for i, cat in enumerate(current_categories):
+        cat_col1, cat_col2 = st.columns([4, 1])
+        with cat_col1:
+            st.write(cat)
+        with cat_col2:
+            if st.button("❌", key=f"del_cat_{i}"):
+                current_categories.pop(i)
+                # Read-modify-write: preserve other config values
+                full_config = read_config(spreadsheet)
+                full_config["categories"] = json.dumps(current_categories)
+                save_config(spreadsheet, full_config)
+                st.cache_data.clear()
+                st.rerun()
+
+    # Add new category
+    new_cat_col1, new_cat_col2 = st.columns([3, 1])
+    with new_cat_col1:
+        new_cat = st.text_input("New category", key="new_cat_input",
+                                placeholder="e.g., Health, Design, Education")
+    with new_cat_col2:
+        st.write("")  # Spacer to align button
+        if st.button("Add", key="add_cat_btn"):
+            if new_cat and new_cat.strip():
+                clean_cat = new_cat.strip()
+                if clean_cat not in current_categories:
+                    current_categories.append(clean_cat)
+                    full_config = read_config(spreadsheet)
+                    full_config["categories"] = json.dumps(current_categories)
+                    save_config(spreadsheet, full_config)
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.warning(f"'{clean_cat}' already exists.")
+
+    st.divider()
+
     if st.button("Save Settings", type="primary"):
         save_config(spreadsheet, {
             "default_intro": default_intro,
             "default_footer": default_footer,
+            "categories": json.dumps(current_categories),
         })
         st.cache_data.clear()
         st.success("Settings saved!")
