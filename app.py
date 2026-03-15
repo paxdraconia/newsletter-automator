@@ -718,7 +718,7 @@ def render_cluster_and_draft():
                 label=f"Edit: {section['section']}",
                 value=section["content"],
                 height=200,
-                key=f"draft_section_{i}",
+                key=f"draft_section_{section['section']}",
                 label_visibility="collapsed",
             )
             edited_sections.append({
