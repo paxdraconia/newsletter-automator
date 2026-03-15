@@ -13,182 +13,43 @@ How Streamlit works (important for understanding this code):
 """
 
 import json
+import os
 import streamlit as st
 import pandas as pd
 from config import get_gspread_client, DEFAULT_PUBLICATION
+from constants import (
+    DEFAULT_CATEGORIES,
+    VALID_STATUSES,
+    ALL_PAGES,
+    PAGE_DASHBOARD,
+    PAGE_ADD_CONTENT,
+    PAGE_CLUSTER_DRAFT,
+    PAGE_SETTINGS,
+    SECTION_INTRO,
+    SECTION_FOOTER,
+    SECTION_AFFILIATE,
+    SK_CLUSTERS,
+    SK_CLUSTER_ENTRIES,
+    SK_SELECTED_CLUSTERS,
+    SK_DRAFT_SECTIONS,
+    SK_SECTION_ENTRY_MAP,
+    SK_DRAFT_ENTRIES_LOOKUP,
+    SK_DRAFT_ENTRY_IDS,
+    SK_SHOW_PREVIEW,
+    SK_CONFIRM_PUBLISH,
+    SK_AFFILIATE_SUGGESTIONS,
+    SK_AFFILIATE_BOOK_TITLES,
+    DRAFT_SESSION_KEYS,
+)
 
-# Default categories — used as a fallback when no custom categories are saved.
-DEFAULT_CATEGORIES = [
-    "Tech", "Science", "Culture", "Business", "AI/ML",
-    "Programming", "L&D", "Fun", "Other",
-]
-
-# Starter books from the Nerd Out Affiliate Links PDF.
-# Link fields are placeholders — update with your actual affiliate URLs
-# via the Book Ledger UI in Settings after importing.
-STARTER_BOOKS = [
-    {
-        "Title": "Design For How People Learn",
-        "Link": "",
-        "Categories": "Philosophy",
-        "Description": "If you work in L&D this is a must read book. This book contains actionable research to reach people and help them learn regardless of the modality. I personally enjoy the chapters on learning evaluation.",
-        "Store": "AZ",
-    },
-    {
-        "Title": "Make It Stick: The Science of Successful Learning",
-        "Link": "",
-        "Categories": "Philosophy",
-        "Description": "This book is targeted at the learner but for those of us in L&D it can be helpful to understand the cognitive science behind learning and study habits. We often work with SMEs to generate new content or facilitate content we're not an expert in. Either way, we need to become credible experts fast.",
-        "Store": "BS",
-    },
-    {
-        "Title": "Creative Acts For Curious People",
-        "Link": "",
-        "Categories": "Philosophy",
-        "Description": "If you're trying to lead a design effort or scoop up some tribal knowledge it's great to put your SME's in creative situations to get them to reveal what they know. One of my favorite exercises from the book is #36, the unpacking exercise. Fantastic book for your desk.",
-        "Store": "BS",
-    },
-    {
-        "Title": "The Timeless Way of Building",
-        "Link": "",
-        "Categories": "Philosophy",
-        "Description": "This book is about architecture, so what is it doing here? The books main argument is that you can understand design better by looking at patterns in how things were done in the past. It advocates looking at the design of a thing to support the whole human and promote their sense of well being.",
-        "Store": "BS",
-    },
-    {
-        "Title": "Map It",
-        "Link": "",
-        "Categories": "Philosophy",
-        "Description": "Cathy Moore's book Map It shows you a practical step by step process that fits with the realities you'll face in business. I highly recommend this to anyone in L&D at any experience level.",
-        "Store": "",
-    },
-    {
-        "Title": "Artificial Intelligence for Learning",
-        "Link": "",
-        "Categories": "AI",
-        "Description": "Donald Clark was working in AI for learning before it was cool. I personally valued this book because it wasn't all just hype. There are case studies of how people applied AI in real life with hard lessons in each.",
-        "Store": "AZ",
-    },
-    {
-        "Title": "Integrating AI into Learning Design and Development",
-        "Link": "",
-        "Categories": "AI",
-        "Description": "An excellent primer for how to think about AI strategically with Learning Design. It has practical real world advice and hands on activities you can use with jr learning designers.",
-        "Store": "AZ",
-    },
-    {
-        "Title": "Caste",
-        "Link": "",
-        "Categories": "DEI",
-        "Description": "If you work in training belonging or discrimination this book will do a lot to give you more of a global frame. I read this during the pandemic and it was a challenging, fascinating and ultimately a timely read.",
-        "Store": "BS",
-    },
-    {
-        "Title": "Mismatch",
-        "Link": "",
-        "Categories": "DEI",
-        "Description": "Mismatch is one of my favorite books. A mismatch between someone's needs and a product causes exclusion. The book provides practices and processes which will help you build more inclusive systems and products. It is critical in L&D to reach everyone.",
-        "Store": "",
-    },
-    {
-        "Title": "Real Talk",
-        "Link": "",
-        "Categories": "Facilitation",
-        "Description": "Bridgett McGowen made an impression on me during a podcast she was on so I picked up one of her books. I found some tips that resonated with me largely because unlike many presenters I'm an introvert and apparently so is the author.",
-        "Store": "",
-    },
-    {
-        "Title": "The Art of Gathering",
-        "Link": "",
-        "Categories": "Facilitation",
-        "Description": "This book gives structure to gatherings that resonate well with me as an introvert and a learning professional. There are lessons for classroom facilitators and designers in general like priming users to set expectations about how the experience itself will be.",
-        "Store": "",
-    },
-    {
-        "Title": "The 2 Hour Cocktail Party",
-        "Link": "",
-        "Categories": "Facilitation",
-        "Description": "On its surface this is a way to engineer social events with a proven formula. Beyond that it has some advice that learning professionals should take to heart. Pilot with a core group. Think about managing the energy of the learner. Create a psychologically safe experience.",
-        "Store": "",
-    },
-    {
-        "Title": "Interface Design for Learning",
-        "Link": "",
-        "Categories": "Elearning",
-        "Description": "This book has detailed descriptions about why various interface components are important to learning as well as academic research backed citations showing why it's important. It gives the theory right next to examples of what it could look like.",
-        "Store": "AZ",
-    },
-    {
-        "Title": "For the Win",
-        "Link": "",
-        "Categories": "Engagement",
-        "Description": "I consider this book to be the best primer for L&D people in gamification because instead of focusing on how to implement points in an elearning it focuses on gamification writ large. How do you use it to solve problems, what are the pitfalls and how you should use it ethically.",
-        "Store": "",
-    },
-    {
-        "Title": "Design is Storytelling",
-        "Link": "",
-        "Categories": "Engagement",
-        "Description": "I found this book incredibly useful in my design, it has a ton of tools and concepts that you can use today. It's presented in an engaging and entertaining way that will keep you flipping through, adding tools to your design toolbelt.",
-        "Store": "AZ",
-    },
-    {
-        "Title": "Fail To Learn",
-        "Link": "",
-        "Categories": "Engagement",
-        "Description": "This book is written by friend of The Nerd Out, Scott Provence. It gives you an excellent formula for both learning and engagement in organisational learning. It looks at it like game loops that you might see in a board or video game but elegantly lays out how you can build engaging practice.",
-        "Store": "",
-    },
-    {
-        "Title": "The DC Comics Guide to Writing Comics",
-        "Link": "",
-        "Categories": "Engagement",
-        "Description": "In instructional design we're expected to keep things new and interesting. Graphic novel, comic book and hero narrative structures every so often keeps things fresh and unexpected for learners. Useful not only for breaking into those modalities but also to think through keeping stories interesting.",
-        "Store": "AZ",
-    },
-    {
-        "Title": "Kirkpatrick's Four Levels of Training Evaluation",
-        "Link": "",
-        "Categories": "Evaluation",
-        "Description": "This book will not teach you everything you need to know about training evaluation but it will get you to a point where you can talk about evaluation with other industry professionals. The 4 levels is as much a part of the lingo as ADDIE.",
-        "Store": "BS",
-    },
-    {
-        "Title": "The Cult of Personality Testing",
-        "Link": "",
-        "Categories": "Evaluation",
-        "Description": "Personality testing is a huge fixture in corporate learning. Knowing their limitations helps prepare you for the inevitable push back you'll get before you deploy. You should go in clear eyed about what these tests can actually do.",
-        "Store": "",
-    },
-    {
-        "Title": "True North, Emerging Leader Edition",
-        "Link": "",
-        "Categories": "Leadership",
-        "Description": "I like this book for learning leaders partly because it encourages leadership as a whole authentic person. I am a big nerd with a big heart. I am not a hyper-efficient corporate guru. There are some great words of wisdom in there.",
-        "Store": "",
-    },
-    {
-        "Title": "Getting to Yes",
-        "Link": "",
-        "Categories": "Leadership",
-        "Description": "This book helped me as an instructional designer to reframe my requests on people's time for what might build mutual advantage and value not just for SMEs but for leaders who own my budget, critical stakeholders and even getting access to do analysis on my audience.",
-        "Store": "AZ",
-    },
-    {
-        "Title": "The Skill Code",
-        "Link": "",
-        "Categories": "Leadership",
-        "Description": "We're going through a demographic and technological change where highly skilled workers are retiring while entry level positions are disappearing. People aren't learning the skills they need through apprenticeship on the job like they used to. This book covers the evidence and what to do about it.",
-        "Store": "AZ",
-    },
-    {
-        "Title": "Engaged: The Neuroscience Behind Creating Productive People in Successful Organizations",
-        "Link": "",
-        "Categories": "Brain",
-        "Description": "This book is research informed, accessible and resonates with my real life experience. When you organize talent and development around the human brain instead of traditional approaches you end up with better business results.",
-        "Store": "AZ",
-    },
-]
+# Starter books loaded from an optional JSON file (gitignored — personal data).
+# See starter_books.json.template for the expected format.
+_STARTER_BOOKS_PATH = os.path.join(os.path.dirname(__file__), "starter_books.json")
+if os.path.exists(_STARTER_BOOKS_PATH):
+    with open(_STARTER_BOOKS_PATH, encoding="utf-8") as _f:
+        STARTER_BOOKS = json.load(_f)
+else:
+    STARTER_BOOKS = []
 from sheets import (
     get_or_create_spreadsheet,
     ensure_tabs,
@@ -279,7 +140,7 @@ selected_pub = st.sidebar.selectbox(
 # Page navigation — now includes "Cluster & Draft" for the AI workflow
 page = st.sidebar.radio(
     "Navigate",
-    options=["Dashboard", "Add Content", "Cluster & Draft", "Settings"],
+    options=ALL_PAGES,
     index=0,
 )
 
@@ -437,7 +298,7 @@ def render_dashboard():
     met3.metric("New", len(df[df["Status"] == "New"]))
 
     # --- Valid statuses for the dropdown ---
-    valid_statuses = ["New", "Reviewed", "Queued", "Used", "Archived"]
+    valid_statuses = VALID_STATUSES
 
     # --- Editable Data Table ---
     # st.data_editor replaces the old st.dataframe + separate status form.
@@ -493,7 +354,460 @@ def render_dashboard():
             st.rerun()
 
 
-# --- Page: Cluster & Draft ---
+# --- Page: Cluster & Draft (helper functions) ---
+
+def _render_clustering_step(backlog_data):
+    """Steps 1-2: Run Gemini clustering and display cluster checkboxes."""
+    df = pd.DataFrame(backlog_data)
+
+    # Filter to only New and Reviewed entries (ready for clustering)
+    clusterizable = df[df["Status"].isin(["New", "Reviewed"])]
+
+    if clusterizable.empty:
+        st.info(
+            "No entries with status 'New' or 'Reviewed' to cluster. "
+            "Update entry statuses on the Dashboard first."
+        )
+    else:
+        st.write(f"**{len(clusterizable)} entries** ready for clustering.")
+
+        if st.button("Cluster Links", type="primary"):
+            with st.spinner("Asking Gemini to find themes in your links..."):
+                from gemini import cluster_entries
+
+                entries_for_clustering = clusterizable.to_dict("records")
+                clusters = cluster_entries(entries_for_clustering)
+
+                if clusters is None:
+                    st.error(
+                        "Clustering failed. Check that your Gemini API key is "
+                        "configured in .env (locally) or Streamlit Secrets (cloud)."
+                    )
+                else:
+                    st.session_state[SK_CLUSTERS] = clusters
+                    st.session_state[SK_CLUSTER_ENTRIES] = entries_for_clustering
+
+    # --- Display Clusters (if they exist in session state) ---
+    if SK_CLUSTERS in st.session_state:
+        clusters = st.session_state[SK_CLUSTERS]
+        entries_lookup = {
+            e["ID"]: e for e in st.session_state[SK_CLUSTER_ENTRIES]
+        }
+
+        st.divider()
+        st.subheader("Step 2: Select Clusters & Articles")
+        st.caption(
+            "Check the clusters you want to include. "
+            "Expand each cluster to select or deselect individual articles."
+        )
+
+        selected_clusters = []
+
+        for i, cluster in enumerate(clusters):
+            cluster_checked = st.checkbox(
+                f"**{cluster['cluster_name']}** — {cluster['description']}",
+                value=False,
+                key=f"cluster_checkbox_{i}",
+            )
+
+            entry_count = len(cluster["entry_ids"])
+            with st.expander(
+                f"View entries ({entry_count} articles)"
+            ):
+                selected_entry_ids = []
+                for entry_id in cluster["entry_ids"]:
+                    entry = entries_lookup.get(entry_id, {})
+                    if entry:
+                        entry_checked = st.checkbox(
+                            f"[{entry.get('URL', '#')}]  ({entry.get('Category', 'N/A')})",
+                            value=cluster_checked,
+                            key=f"entry_checkbox_{i}_{entry_id}",
+                        )
+                        reflection = entry.get("Reflection", "No reflection")
+                        st.caption(f"  {reflection}")
+
+                        if entry_checked:
+                            selected_entry_ids.append(entry_id)
+
+            if selected_entry_ids:
+                selected_clusters.append({
+                    "cluster_name": cluster["cluster_name"],
+                    "description": cluster["description"],
+                    "entry_ids": selected_entry_ids,
+                })
+
+        st.session_state[SK_SELECTED_CLUSTERS] = selected_clusters
+        return entries_lookup
+    return None
+
+
+def _render_draft_generation_step(entries_lookup):
+    """Step 3: Generate a newsletter draft from selected clusters."""
+    selected_clusters = st.session_state.get(SK_SELECTED_CLUSTERS, [])
+
+    st.divider()
+    st.subheader("Step 3: Generate Newsletter Draft")
+
+    if not selected_clusters:
+        st.info("Select at least one cluster and article above to generate a draft.")
+        return
+
+    total_articles = sum(len(c["entry_ids"]) for c in selected_clusters)
+    st.write(
+        f"**{len(selected_clusters)} clusters** with "
+        f"**{total_articles} articles** selected."
+    )
+
+    if st.button("Generate Draft", type="primary"):
+        with st.spinner("Fetching article titles..."):
+            from gemini import fetch_all_titles
+            url_titles = fetch_all_titles(entries_lookup)
+
+        with st.spinner("Gemini is writing your newsletter draft..."):
+            from gemini import generate_draft
+
+            draft_sections = generate_draft(
+                selected_clusters, entries_lookup, url_titles
+            )
+
+            if draft_sections is None:
+                st.error(
+                    "Draft generation failed. Check your Gemini API key."
+                )
+            else:
+                # Auto-assemble: prepend intro, append footer from Settings
+                config = load_config(spreadsheet, spreadsheet.id)
+                default_intro = config.get("default_intro", "")
+                default_footer = config.get("default_footer", "")
+
+                if default_intro:
+                    for section in draft_sections:
+                        if section["section"] == SECTION_INTRO:
+                            section["content"] = (
+                                default_intro
+                                + "\n\n"
+                                + section["content"]
+                            )
+                            break
+
+                if default_footer:
+                    draft_sections.append({
+                        "section": SECTION_FOOTER,
+                        "content": default_footer,
+                    })
+
+                st.session_state[SK_DRAFT_SECTIONS] = draft_sections
+                st.success("Draft generated! Edit it below.")
+
+                section_entry_map = {
+                    c["cluster_name"]: c["entry_ids"]
+                    for c in selected_clusters
+                }
+                st.session_state[SK_SECTION_ENTRY_MAP] = section_entry_map
+                st.session_state[SK_DRAFT_ENTRIES_LOOKUP] = entries_lookup
+
+                all_entry_ids = []
+                for cluster in selected_clusters:
+                    all_entry_ids.extend(cluster["entry_ids"])
+                st.session_state[SK_DRAFT_ENTRY_IDS] = all_entry_ids
+                batch_update_backlog_statuses(
+                    spreadsheet, all_entry_ids, "Queued"
+                )
+                st.cache_data.clear()
+
+
+def _render_draft_editor():
+    """Step 4: Show editable text areas for each draft section.
+
+    Returns the list of edited sections (needed by save/publish).
+    """
+    st.divider()
+    st.subheader("Step 4: Edit Your Draft")
+    st.caption(
+        "Edit each section below. Click 'Save Draft' to persist your changes "
+        "to Google Sheets — you can come back later and pick up where you left off."
+    )
+
+    draft_sections = st.session_state[SK_DRAFT_SECTIONS]
+    edited_sections = []
+
+    section_entry_map = st.session_state.get(SK_SECTION_ENTRY_MAP, {})
+    draft_entries = st.session_state.get(SK_DRAFT_ENTRIES_LOOKUP, {})
+
+    for i, section in enumerate(draft_sections):
+        st.markdown(f"### {section['section']}")
+        edited_content = st.text_area(
+            label=f"Edit: {section['section']}",
+            value=section["content"],
+            height=200,
+            key=f"draft_section_{section['section']}",
+            label_visibility="collapsed",
+        )
+        edited_sections.append({
+            "section": section["section"],
+            "content": edited_content,
+        })
+
+        # Show original reflections for reference (if mapping exists)
+        entry_ids_for_section = section_entry_map.get(section["section"], [])
+        if entry_ids_for_section and draft_entries:
+            with st.expander(
+                f"Your reflections ({len(entry_ids_for_section)} entries)"
+            ):
+                for eid in entry_ids_for_section:
+                    entry = draft_entries.get(eid, {})
+                    if entry:
+                        url = entry.get("URL", "")
+                        reflection = entry.get("Reflection", "No reflection")
+                        if url:
+                            st.markdown(f"**{url}**")
+                        st.caption(reflection)
+                        st.markdown("---")
+
+    return edited_sections
+
+
+def _render_affiliate_step():
+    """Step 5: Suggest and insert affiliate book picks."""
+    st.divider()
+    st.subheader("Step 5: Affiliate Book Picks")
+    st.caption(
+        "Suggest a book recommendation to include in this episode. "
+        "Gemini scores each book for relevance to the episode's themes, "
+        "and books that haven't been used recently get a boost."
+    )
+
+    selected_clusters_for_aff = st.session_state.get(SK_SELECTED_CLUSTERS, [])
+
+    if st.button("Suggest Affiliate Books", key="suggest_affiliate_btn"):
+        aff_books = load_book_ledger(spreadsheet, spreadsheet.id)
+        if not aff_books:
+            st.warning(
+                "No books in the Book Ledger. "
+                "Add books in Settings first."
+            )
+        elif not selected_clusters_for_aff:
+            st.warning(
+                "No cluster context available. Generate a draft first "
+                "so Gemini knows what topics to match against."
+            )
+        else:
+            with st.spinner("Gemini is scoring book relevance..."):
+                from gemini import suggest_affiliate_books
+                suggestions = suggest_affiliate_books(
+                    selected_clusters_for_aff, aff_books
+                )
+
+            if suggestions is None:
+                st.error("Affiliate suggestion failed. Check your Gemini API key.")
+            else:
+                # Apply recency weighting in Python
+                book_meta = {b["Title"]: b for b in aff_books}
+                from datetime import datetime, timedelta
+                now = datetime.now()
+                recency_cutoff = now - timedelta(days=60)
+
+                for s in suggestions:
+                    meta = book_meta.get(s["title"], {})
+                    times_used = int(meta.get("Times_Used", 0) or 0)
+                    last_used_str = str(meta.get("Last_Used", ""))
+
+                    if times_used == 0:
+                        s["recency_adj"] = 0.1
+                        s["recency_flag"] = "Never used"
+                    elif last_used_str:
+                        try:
+                            last_used_date = datetime.strptime(
+                                last_used_str, "%Y-%m-%d"
+                            )
+                            if last_used_date > recency_cutoff:
+                                s["recency_adj"] = -0.15
+                                s["recency_flag"] = "Used recently"
+                            else:
+                                s["recency_adj"] = 0.0
+                                s["recency_flag"] = "Not used recently"
+                        except ValueError:
+                            s["recency_adj"] = 0.0
+                            s["recency_flag"] = "Unknown"
+                    else:
+                        s["recency_adj"] = 0.0
+                        s["recency_flag"] = "Not used recently"
+
+                    raw = float(s.get("relevance_score", 0))
+                    s["final_score"] = min(1.0, max(0.0, raw + s["recency_adj"]))
+
+                    s["store"] = meta.get("Store", "")
+                    s["link"] = meta.get("Link", "")
+                    s["description"] = meta.get("Description", "")
+                    s["times_used"] = times_used
+
+                suggestions.sort(key=lambda x: x["final_score"], reverse=True)
+                st.session_state[SK_AFFILIATE_SUGGESTIONS] = suggestions
+
+    # Display suggestions if they exist
+    if SK_AFFILIATE_SUGGESTIONS in st.session_state:
+        suggestions = st.session_state[SK_AFFILIATE_SUGGESTIONS]
+        st.write(f"**{len(suggestions)} books** scored. Select 1\u20133 to include:")
+
+        for idx, s in enumerate(suggestions):
+            score_pct = int(s["final_score"] * 100)
+            store_badge = f" [{s['store']}]" if s["store"] else ""
+            recency_label = f" \u2014 {s['recency_flag']}"
+            if s["times_used"] > 0:
+                recency_label += f" ({s['times_used']}x)"
+
+            st.checkbox(
+                f"**{s['title']}**{store_badge} \u2014 "
+                f"Score: {score_pct}%{recency_label}",
+                value=False,
+                key=f"affiliate_pick_{idx}",
+            )
+
+            with st.expander(f"Details: {s['title']}", expanded=False):
+                st.caption(f"Gemini says: {s['reasoning']}")
+                if s["description"]:
+                    st.markdown(f"**Your blurb:** {s['description'][:200]}...")
+                if s["link"]:
+                    st.markdown(f"Link: {s['link']}")
+                else:
+                    st.caption("No affiliate link set \u2014 add one in Settings > Book Ledger")
+
+        # Insert button
+        if st.button("Insert Affiliate Section", key="insert_affiliate_btn"):
+            picked = []
+            for idx, s in enumerate(suggestions):
+                if st.session_state.get(f"affiliate_pick_{idx}", False):
+                    picked.append(s)
+                if len(picked) >= 3:
+                    break
+
+            if not picked:
+                st.warning("Select at least one book to insert.")
+            else:
+                lines = [f"## {SECTION_AFFILIATE}\n"]
+                affiliate_titles = []
+                for book in picked:
+                    title = book["title"]
+                    link = book.get("link", "")
+                    desc = book.get("description", "")
+                    affiliate_titles.append(title)
+
+                    if link:
+                        lines.append(f"> [{title}]({link})\n")
+                    else:
+                        lines.append(f"> **{title}** *(add affiliate link in Settings)*\n")
+                    if desc:
+                        lines.append(f"{desc}\n")
+
+                affiliate_content = "\n".join(lines)
+
+                sections = st.session_state[SK_DRAFT_SECTIONS]
+                sections = [
+                    s for s in sections
+                    if s["section"] != SECTION_AFFILIATE
+                ]
+                footer_idx = next(
+                    (i for i, s in enumerate(sections)
+                     if s["section"] == SECTION_FOOTER),
+                    None
+                )
+                new_section = {
+                    "section": SECTION_AFFILIATE,
+                    "content": affiliate_content,
+                }
+                if footer_idx is not None:
+                    sections.insert(footer_idx, new_section)
+                else:
+                    sections.append(new_section)
+
+                st.session_state[SK_DRAFT_SECTIONS] = sections
+                st.session_state[SK_AFFILIATE_BOOK_TITLES] = affiliate_titles
+                st.success(
+                    f"Inserted {len(picked)} book(s) as 'Affiliate Picks' section!"
+                )
+                st.rerun()
+
+
+def _render_draft_actions(edited_sections):
+    """Step 6: Save, Preview, Clear, and Publish buttons."""
+    btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
+
+    with btn_col1:
+        if st.button("Save Draft", type="primary"):
+            save_draft(spreadsheet, edited_sections)
+            st.session_state[SK_DRAFT_SECTIONS] = edited_sections
+            st.success("Draft saved to Google Sheets!")
+
+    with btn_col2:
+        if st.button("Preview as Markdown"):
+            st.session_state[SK_SHOW_PREVIEW] = not st.session_state.get(
+                SK_SHOW_PREVIEW, False
+            )
+
+    with btn_col3:
+        if st.button("Clear Draft"):
+            clear_draft(spreadsheet)
+            for key in DRAFT_SESSION_KEYS:
+                st.session_state.pop(key, None)
+            st.info("Draft cleared. You can start fresh!")
+            st.rerun()
+
+    with btn_col4:
+        draft_entry_ids = st.session_state.get(SK_DRAFT_ENTRY_IDS, [])
+        if st.button(
+            "Publish",
+            disabled=not draft_entry_ids,
+            help="Mark entries as Used, record the episode, and clear the draft."
+            if draft_entry_ids else
+            "Not available \u2014 draft was loaded from saved state without entry tracking.",
+        ):
+            st.session_state[SK_CONFIRM_PUBLISH] = True
+
+    # --- Publish Confirmation ---
+    if st.session_state.get(SK_CONFIRM_PUBLISH, False):
+        aff_titles = st.session_state.get(SK_AFFILIATE_BOOK_TITLES, [])
+        aff_note = ""
+        if aff_titles:
+            aff_note = (
+                f" Affiliate book(s) will be tracked: "
+                f"**{', '.join(aff_titles)}**."
+            )
+        st.warning(
+            "Are you sure you want to publish? This will mark all included "
+            f"entries as **Used** and record the episode.{aff_note}"
+        )
+        conf_col1, conf_col2 = st.columns(2)
+        with conf_col1:
+            if st.button("Yes, Publish"):
+                publish_episode(
+                    spreadsheet,
+                    edited_sections,
+                    st.session_state[SK_DRAFT_ENTRY_IDS],
+                    affiliate_book_titles=st.session_state.get(
+                        SK_AFFILIATE_BOOK_TITLES, []
+                    ),
+                )
+                for key in DRAFT_SESSION_KEYS:
+                    st.session_state.pop(key, None)
+                st.cache_data.clear()
+                st.success("Published! Entries marked as Used.")
+                st.rerun()
+        with conf_col2:
+            if st.button("Cancel"):
+                st.session_state.pop(SK_CONFIRM_PUBLISH, None)
+                st.rerun()
+
+    # --- Markdown Preview ---
+    if st.session_state.get(SK_SHOW_PREVIEW, False):
+        st.divider()
+        st.subheader("Preview")
+        full_markdown = "\n\n".join(
+            section["content"] for section in edited_sections
+        )
+        st.markdown(full_markdown)
+
+
+# --- Page: Cluster & Draft (main coordinator) ---
 def render_cluster_and_draft():
     """The AI-powered clustering and draft generation page.
 
@@ -513,513 +827,38 @@ def render_cluster_and_draft():
         "topic clusters using Gemini AI."
     )
 
-    # Load backlog data
     backlog_data = load_backlog(spreadsheet, spreadsheet.id)
 
     if not backlog_data:
         st.info("No entries in the backlog. Add some content first!")
         return
 
-    df = pd.DataFrame(backlog_data)
+    entries_lookup = _render_clustering_step(backlog_data)
 
-    # Filter to only New and Reviewed entries (ready for clustering)
-    clusterizable = df[df["Status"].isin(["New", "Reviewed"])]
-
-    if clusterizable.empty:
-        st.info(
-            "No entries with status 'New' or 'Reviewed' to cluster. "
-            "Update entry statuses on the Dashboard first."
-        )
-        # Still check for existing draft below
-    else:
-        st.write(f"**{len(clusterizable)} entries** ready for clustering.")
-
-        # --- Cluster Button ---
-        if st.button("Cluster Links", type="primary"):
-            with st.spinner("Asking Gemini to find themes in your links..."):
-                from gemini import cluster_entries
-
-                entries_for_clustering = clusterizable.to_dict("records")
-                clusters = cluster_entries(entries_for_clustering)
-
-                if clusters is None:
-                    st.error(
-                        "Clustering failed. Check that your Gemini API key is "
-                        "configured in .env (locally) or Streamlit Secrets (cloud)."
-                    )
-                else:
-                    # Store clusters in session_state so they persist across reruns
-                    st.session_state["clusters"] = clusters
-                    st.session_state["cluster_entries"] = entries_for_clustering
-
-    # --- Display Clusters (if they exist in session state) ---
-    if "clusters" in st.session_state:
-        clusters = st.session_state["clusters"]
-        entries_lookup = {
-            e["ID"]: e for e in st.session_state["cluster_entries"]
-        }
-
-        st.divider()
-        st.subheader("Step 2: Select Clusters & Articles")
-        st.caption(
-            "Check the clusters you want to include. "
-            "Expand each cluster to select or deselect individual articles."
-        )
-
-        # Build filtered clusters based on user selections.
-        # Each cluster checkbox acts as a "select all" toggle, and individual
-        # entry checkboxes let you fine-tune which articles go into the draft.
-        selected_clusters = []
-
-        for i, cluster in enumerate(clusters):
-            cluster_checked = st.checkbox(
-                f"**{cluster['cluster_name']}** — {cluster['description']}",
-                value=False,
-                key=f"cluster_checkbox_{i}",
-            )
-
-            # Show entries inside an expander — with per-entry checkboxes
-            entry_count = len(cluster["entry_ids"])
-            with st.expander(
-                f"View entries ({entry_count} articles)"
-            ):
-                selected_entry_ids = []
-                for entry_id in cluster["entry_ids"]:
-                    entry = entries_lookup.get(entry_id, {})
-                    if entry:
-                        # Entry checkbox defaults to checked when cluster is checked
-                        entry_checked = st.checkbox(
-                            f"[{entry.get('URL', '#')}]  ({entry.get('Category', 'N/A')})",
-                            value=cluster_checked,
-                            key=f"entry_checkbox_{i}_{entry_id}",
-                        )
-                        # Show the reflection text below the checkbox
-                        reflection = entry.get("Reflection", "No reflection")
-                        st.caption(f"  {reflection}")
-
-                        if entry_checked:
-                            selected_entry_ids.append(entry_id)
-
-            # Build a filtered cluster object with only selected entries
-            if selected_entry_ids:
-                selected_clusters.append({
-                    "cluster_name": cluster["cluster_name"],
-                    "description": cluster["description"],
-                    "entry_ids": selected_entry_ids,
-                })
-
-        st.session_state["selected_clusters"] = selected_clusters
-
-        # --- Step 3: Generate Draft ---
-        st.divider()
-        st.subheader("Step 3: Generate Newsletter Draft")
-
-        if not selected_clusters:
-            st.info("Select at least one cluster and article above to generate a draft.")
-        else:
-            # Show a summary of what will be drafted
-            total_articles = sum(len(c["entry_ids"]) for c in selected_clusters)
-            st.write(
-                f"**{len(selected_clusters)} clusters** with "
-                f"**{total_articles} articles** selected."
-            )
-
-            if st.button("Generate Draft", type="primary"):
-                # Fetch article titles from URLs for better link formatting
-                with st.spinner("Fetching article titles..."):
-                    from gemini import fetch_all_titles
-                    url_titles = fetch_all_titles(entries_lookup)
-
-                with st.spinner("Gemini is writing your newsletter draft..."):
-                    from gemini import generate_draft
-
-                    draft_sections = generate_draft(
-                        selected_clusters, entries_lookup, url_titles
-                    )
-
-                    if draft_sections is None:
-                        st.error(
-                            "Draft generation failed. Check your Gemini API key."
-                        )
-                    else:
-                        # Auto-assemble: prepend intro, append footer from Settings
-                        config = load_config(spreadsheet, spreadsheet.id)
-                        default_intro = config.get("default_intro", "")
-                        default_footer = config.get("default_footer", "")
-
-                        if default_intro:
-                            for section in draft_sections:
-                                if section["section"] == "Intro":
-                                    section["content"] = (
-                                        default_intro
-                                        + "\n\n"
-                                        + section["content"]
-                                    )
-                                    break
-
-                        if default_footer:
-                            draft_sections.append({
-                                "section": "Footer",
-                                "content": default_footer,
-                            })
-
-                        st.session_state["draft_sections"] = draft_sections
-                        st.success("Draft generated! Edit it below.")
-
-                        # Store section-to-entry mapping so reflections
-                        # can be displayed alongside each draft section
-                        section_entry_map = {
-                            c["cluster_name"]: c["entry_ids"]
-                            for c in selected_clusters
-                        }
-                        st.session_state["section_entry_map"] = section_entry_map
-                        st.session_state["draft_entries_lookup"] = entries_lookup
-
-                        # Auto-update only the selected entries to "Queued"
-                        all_entry_ids = []
-                        for cluster in selected_clusters:
-                            all_entry_ids.extend(cluster["entry_ids"])
-                        st.session_state["draft_entry_ids"] = all_entry_ids
-                        batch_update_backlog_statuses(
-                            spreadsheet, all_entry_ids, "Queued"
-                        )
-                        st.cache_data.clear()
+    if entries_lookup and SK_SELECTED_CLUSTERS in st.session_state:
+        _render_draft_generation_step(entries_lookup)
 
     # --- Step 4: Edit & Save Draft ---
     # Check for an existing saved draft if we don't have one in session state.
     # This enables cross-device persistence: start on PC, finish on phone.
-    if "draft_sections" not in st.session_state:
+    if SK_DRAFT_SECTIONS not in st.session_state:
         existing_draft = read_draft(spreadsheet)
         if existing_draft:
-            st.session_state["draft_sections"] = [
+            st.session_state[SK_DRAFT_SECTIONS] = [
                 {"section": row["Section"], "content": row["Content"]}
                 for row in existing_draft
             ]
 
-    if "draft_sections" in st.session_state:
-        st.divider()
-        st.subheader("Step 4: Edit Your Draft")
-        st.caption(
-            "Edit each section below. Click 'Save Draft' to persist your changes "
-            "to Google Sheets — you can come back later and pick up where you left off."
-        )
-
-        draft_sections = st.session_state["draft_sections"]
-        edited_sections = []
-
-        # Load reflection mapping (only available for freshly generated drafts,
-        # not for drafts loaded from Google Sheets — that's expected)
-        section_entry_map = st.session_state.get("section_entry_map", {})
-        draft_entries = st.session_state.get("draft_entries_lookup", {})
-
-        for i, section in enumerate(draft_sections):
-            st.markdown(f"### {section['section']}")
-            edited_content = st.text_area(
-                label=f"Edit: {section['section']}",
-                value=section["content"],
-                height=200,
-                key=f"draft_section_{section['section']}",
-                label_visibility="collapsed",
-            )
-            edited_sections.append({
-                "section": section["section"],
-                "content": edited_content,
-            })
-
-            # Show original reflections for reference (if mapping exists)
-            entry_ids_for_section = section_entry_map.get(section["section"], [])
-            if entry_ids_for_section and draft_entries:
-                with st.expander(
-                    f"Your reflections ({len(entry_ids_for_section)} entries)"
-                ):
-                    for eid in entry_ids_for_section:
-                        entry = draft_entries.get(eid, {})
-                        if entry:
-                            url = entry.get("URL", "")
-                            reflection = entry.get("Reflection", "No reflection")
-                            if url:
-                                st.markdown(f"**{url}**")
-                            st.caption(reflection)
-                            st.markdown("---")
-
-        # --- Step 5: Affiliate Book Picks ---
-        st.divider()
-        st.subheader("Step 5: Affiliate Book Picks")
-        st.caption(
-            "Suggest a book recommendation to include in this episode. "
-            "Gemini scores each book for relevance to the episode's themes, "
-            "and books that haven't been used recently get a boost."
-        )
-
-        # Only allow suggestions when we have cluster context
-        selected_clusters_for_aff = st.session_state.get("selected_clusters", [])
-
-        if st.button("Suggest Affiliate Books", key="suggest_affiliate_btn"):
-            aff_books = load_book_ledger(spreadsheet, spreadsheet.id)
-            if not aff_books:
-                st.warning(
-                    "No books in the Book Ledger. "
-                    "Add books in Settings first."
-                )
-            elif not selected_clusters_for_aff:
-                st.warning(
-                    "No cluster context available. Generate a draft first "
-                    "so Gemini knows what topics to match against."
-                )
-            else:
-                with st.spinner("Gemini is scoring book relevance..."):
-                    from gemini import suggest_affiliate_books
-                    suggestions = suggest_affiliate_books(
-                        selected_clusters_for_aff, aff_books
-                    )
-
-                if suggestions is None:
-                    st.error("Affiliate suggestion failed. Check your Gemini API key.")
-                else:
-                    # Apply recency weighting in Python
-                    # Build a lookup of book metadata by title
-                    book_meta = {b["Title"]: b for b in aff_books}
-                    from datetime import datetime, timedelta
-                    now = datetime.now()
-                    recency_cutoff = now - timedelta(days=60)
-
-                    for s in suggestions:
-                        meta = book_meta.get(s["title"], {})
-                        times_used = int(meta.get("Times_Used", 0) or 0)
-                        last_used_str = str(meta.get("Last_Used", ""))
-
-                        # Recency adjustment
-                        if times_used == 0:
-                            # Never used — bonus
-                            s["recency_adj"] = 0.1
-                            s["recency_flag"] = "Never used"
-                        elif last_used_str:
-                            try:
-                                last_used_date = datetime.strptime(
-                                    last_used_str, "%Y-%m-%d"
-                                )
-                                if last_used_date > recency_cutoff:
-                                    s["recency_adj"] = -0.15
-                                    s["recency_flag"] = "Used recently"
-                                else:
-                                    s["recency_adj"] = 0.0
-                                    s["recency_flag"] = "Not used recently"
-                            except ValueError:
-                                s["recency_adj"] = 0.0
-                                s["recency_flag"] = "Unknown"
-                        else:
-                            s["recency_adj"] = 0.0
-                            s["recency_flag"] = "Not used recently"
-
-                        # Final score
-                        raw = float(s.get("relevance_score", 0))
-                        s["final_score"] = min(1.0, max(0.0, raw + s["recency_adj"]))
-
-                        # Attach metadata for display
-                        s["store"] = meta.get("Store", "")
-                        s["link"] = meta.get("Link", "")
-                        s["description"] = meta.get("Description", "")
-                        s["times_used"] = times_used
-
-                    # Sort by final score descending
-                    suggestions.sort(key=lambda x: x["final_score"], reverse=True)
-                    st.session_state["affiliate_suggestions"] = suggestions
-
-        # Display suggestions if they exist
-        if "affiliate_suggestions" in st.session_state:
-            suggestions = st.session_state["affiliate_suggestions"]
-            st.write(f"**{len(suggestions)} books** scored. Select 1–3 to include:")
-
-            for idx, s in enumerate(suggestions):
-                score_pct = int(s["final_score"] * 100)
-                store_badge = f" [{s['store']}]" if s["store"] else ""
-                recency_label = f" — {s['recency_flag']}"
-                if s["times_used"] > 0:
-                    recency_label += f" ({s['times_used']}x)"
-
-                st.checkbox(
-                    f"**{s['title']}**{store_badge} — "
-                    f"Score: {score_pct}%{recency_label}",
-                    value=False,
-                    key=f"affiliate_pick_{idx}",
-                )
-
-                # Show reasoning + blurb in a compact expander
-                with st.expander(f"Details: {s['title']}", expanded=False):
-                    st.caption(f"Gemini says: {s['reasoning']}")
-                    if s["description"]:
-                        st.markdown(f"**Your blurb:** {s['description'][:200]}...")
-                    if s["link"]:
-                        st.markdown(f"Link: {s['link']}")
-                    else:
-                        st.caption("No affiliate link set — add one in Settings > Book Ledger")
-
-            # Insert button
-            if st.button("Insert Affiliate Section", key="insert_affiliate_btn"):
-                # Collect checked books (max 3)
-                picked = []
-                for idx, s in enumerate(suggestions):
-                    if st.session_state.get(f"affiliate_pick_{idx}", False):
-                        picked.append(s)
-                    if len(picked) >= 3:
-                        break
-
-                if not picked:
-                    st.warning("Select at least one book to insert.")
-                else:
-                    # Build the affiliate section content from pre-written blurbs
-                    lines = ["## Affiliate Picks\n"]
-                    affiliate_titles = []
-                    for book in picked:
-                        title = book["title"]
-                        link = book.get("link", "")
-                        desc = book.get("description", "")
-                        affiliate_titles.append(title)
-
-                        if link:
-                            lines.append(f"> [{title}]({link})\n")
-                        else:
-                            lines.append(f"> **{title}** *(add affiliate link in Settings)*\n")
-                        if desc:
-                            lines.append(f"{desc}\n")
-
-                    affiliate_content = "\n".join(lines)
-
-                    # Insert before Footer (if exists), otherwise at the end
-                    sections = st.session_state["draft_sections"]
-                    # Remove any existing Affiliate Picks section first
-                    sections = [
-                        s for s in sections
-                        if s["section"] != "Affiliate Picks"
-                    ]
-                    footer_idx = next(
-                        (i for i, s in enumerate(sections)
-                         if s["section"] == "Footer"),
-                        None
-                    )
-                    new_section = {
-                        "section": "Affiliate Picks",
-                        "content": affiliate_content,
-                    }
-                    if footer_idx is not None:
-                        sections.insert(footer_idx, new_section)
-                    else:
-                        sections.append(new_section)
-
-                    st.session_state["draft_sections"] = sections
-                    st.session_state["affiliate_book_titles"] = affiliate_titles
-                    st.success(
-                        f"Inserted {len(picked)} book(s) as 'Affiliate Picks' section!"
-                    )
-                    st.rerun()
-
-        # --- Save, Preview, Clear, and Publish buttons ---
-        btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
-
-        with btn_col1:
-            if st.button("Save Draft", type="primary"):
-                save_draft(spreadsheet, edited_sections)
-                st.session_state["draft_sections"] = edited_sections
-                st.success("Draft saved to Google Sheets!")
-
-        with btn_col2:
-            if st.button("Preview as Markdown"):
-                st.session_state["show_preview"] = not st.session_state.get(
-                    "show_preview", False
-                )
-
-        with btn_col3:
-            if st.button("Clear Draft"):
-                clear_draft(spreadsheet)
-                for key in [
-                    "draft_sections",
-                    "clusters",
-                    "cluster_entries",
-                    "selected_clusters",
-                    "show_preview",
-                    "section_entry_map",
-                    "draft_entries_lookup",
-                    "draft_entry_ids",
-                    "confirm_publish",
-                    "affiliate_suggestions",
-                    "affiliate_book_titles",
-                ]:
-                    st.session_state.pop(key, None)
-                st.info("Draft cleared. You can start fresh!")
-                st.rerun()
-
-        with btn_col4:
-            # Publish is only available when we know which entries to mark as Used
-            draft_entry_ids = st.session_state.get("draft_entry_ids", [])
-            if st.button(
-                "Publish",
-                disabled=not draft_entry_ids,
-                help="Mark entries as Used, record the episode, and clear the draft."
-                if draft_entry_ids else
-                "Not available — draft was loaded from saved state without entry tracking.",
-            ):
-                st.session_state["confirm_publish"] = True
-
-        # --- Publish Confirmation ---
-        if st.session_state.get("confirm_publish", False):
-            aff_titles = st.session_state.get("affiliate_book_titles", [])
-            aff_note = ""
-            if aff_titles:
-                aff_note = (
-                    f" Affiliate book(s) will be tracked: "
-                    f"**{', '.join(aff_titles)}**."
-                )
-            st.warning(
-                "Are you sure you want to publish? This will mark all included "
-                f"entries as **Used** and record the episode.{aff_note}"
-            )
-            conf_col1, conf_col2 = st.columns(2)
-            with conf_col1:
-                if st.button("Yes, Publish"):
-                    publish_episode(
-                        spreadsheet,
-                        edited_sections,
-                        st.session_state["draft_entry_ids"],
-                        affiliate_book_titles=st.session_state.get(
-                            "affiliate_book_titles", []
-                        ),
-                    )
-                    for key in [
-                        "draft_sections",
-                        "clusters",
-                        "cluster_entries",
-                        "selected_clusters",
-                        "show_preview",
-                        "section_entry_map",
-                        "draft_entries_lookup",
-                        "draft_entry_ids",
-                        "confirm_publish",
-                        "affiliate_suggestions",
-                        "affiliate_book_titles",
-                    ]:
-                        st.session_state.pop(key, None)
-                    st.cache_data.clear()
-                    st.success("Published! Entries marked as Used.")
-                    st.rerun()
-            with conf_col2:
-                if st.button("Cancel"):
-                    st.session_state.pop("confirm_publish", None)
-                    st.rerun()
-
-        # --- Markdown Preview ---
-        if st.session_state.get("show_preview", False):
-            st.divider()
-            st.subheader("Preview")
-            full_markdown = "\n\n".join(
-                section["content"] for section in edited_sections
-            )
-            st.markdown(full_markdown)
+    if SK_DRAFT_SECTIONS in st.session_state:
+        edited_sections = _render_draft_editor()
+        _render_affiliate_step()
+        _render_draft_actions(edited_sections)
 
 
-# --- Page: Settings ---
-def render_settings():
-    """Settings page for configuring newsletter defaults like intro and footer."""
-    st.header("Settings")
+# --- Page: Settings (helper functions) ---
+
+def _render_boilerplate_settings():
+    """Boilerplate settings: intro, footer, categories, and save button."""
     st.caption(
         "Configure default text that gets added to every newsletter draft. "
         "These values are saved to Google Sheets and persist across sessions."
@@ -1031,8 +870,6 @@ def render_settings():
         "`[Nerd Out Gear](https://your-merch-link.com)`"
     )
 
-    # Load existing config — cached, but the cache is cleared after every save
-    # (st.cache_data.clear() runs when Save Settings / Add / Delete is clicked)
     config = load_config(spreadsheet, spreadsheet.id)
 
     default_intro = st.text_area(
@@ -1050,7 +887,6 @@ def render_settings():
         help="This text is appended as a Footer section at the end of every new draft.",
     )
 
-    # Live markdown preview so users can verify their links render correctly
     if default_intro or default_footer:
         st.divider()
         st.subheader("Preview")
@@ -1070,22 +906,19 @@ def render_settings():
     cat_json = config.get("categories", "")
     current_categories = json.loads(cat_json) if cat_json else list(DEFAULT_CATEGORIES)
 
-    # Display each category with a delete button
     for i, cat in enumerate(current_categories):
         cat_col1, cat_col2 = st.columns([4, 1])
         with cat_col1:
             st.write(cat)
         with cat_col2:
-            if st.button("❌", key=f"del_cat_{i}"):
+            if st.button("\u274c", key=f"del_cat_{i}"):
                 current_categories.pop(i)
-                # Read-modify-write: preserve other config values
                 full_config = load_config(spreadsheet, spreadsheet.id)
                 full_config["categories"] = json.dumps(current_categories)
                 save_config(spreadsheet, full_config)
                 st.cache_data.clear()
                 st.rerun()
 
-    # Add new category
     new_cat_col1, new_cat_col2 = st.columns([3, 1])
     with new_cat_col1:
         new_cat = st.text_input("New category", key="new_cat_input",
@@ -1116,7 +949,8 @@ def render_settings():
         st.cache_data.clear()
         st.success("Settings saved!")
 
-    # --- Book Ledger Management ---
+def _render_book_ledger():
+    """Book Ledger management: view, edit, delete, add, and import books."""
     st.divider()
     st.header("Book Ledger")
     st.caption(
@@ -1240,49 +1074,61 @@ def render_settings():
                 else:
                     st.error("Title is required.")
 
-    # --- Import starter books from PDF data ---
-    with st.expander("Import Starter Books (from Nerd Out Affiliate Links PDF)"):
-        st.caption(
-            f"Import {len(STARTER_BOOKS)} pre-configured books from the Nerd Out "
-            "affiliate links list. Titles, categories, descriptions, and store "
-            "indicators are pre-filled. **You'll need to paste in the actual "
-            "affiliate URLs** via the edit table above after importing."
-        )
-
-        # Show preview
-        preview_df = pd.DataFrame(STARTER_BOOKS)[
-            ["Title", "Categories", "Store"]
-        ]
-        st.dataframe(preview_df, hide_index=True, width=600)
-
-        if st.button("Import All Starter Books", key="import_starter_btn"):
-            added = 0
-            skipped = 0
-            for book in STARTER_BOOKS:
-                success, _ = add_to_book_ledger(
-                    spreadsheet,
-                    book["Title"], book["Link"], book["Categories"],
-                    book["Description"], book["Store"],
-                )
-                if success:
-                    added += 1
-                else:
-                    skipped += 1
-            st.success(
-                f"Imported {added} books! "
-                + (f"({skipped} skipped as duplicates)" if skipped else "")
+    # --- Import starter books from JSON file ---
+    with st.expander("Import Starter Books"):
+        if not STARTER_BOOKS:
+            st.info(
+                "No `starter_books.json` found. To enable bulk import, create one "
+                "in the project root. See `starter_books.json.template` for the format."
             )
-            st.cache_data.clear()
-            st.rerun()
+        else:
+            st.caption(
+                f"Import {len(STARTER_BOOKS)} pre-configured books. Titles, categories, "
+                "descriptions, and store indicators are pre-filled. **You'll need to "
+                "paste in the actual affiliate URLs** via the edit table above after importing."
+            )
+
+            preview_df = pd.DataFrame(STARTER_BOOKS)[
+                ["Title", "Categories", "Store"]
+            ]
+            st.dataframe(preview_df, hide_index=True, width=600)
+
+            if st.button("Import All Starter Books", key="import_starter_btn"):
+                added = 0
+                skipped = 0
+                for book in STARTER_BOOKS:
+                    success, _ = add_to_book_ledger(
+                        spreadsheet,
+                        book["Title"], book["Link"], book["Categories"],
+                        book["Description"], book["Store"],
+                    )
+                    if success:
+                        added += 1
+                    else:
+                        skipped += 1
+                st.success(
+                    f"Imported {added} books! "
+                    + (f"({skipped} skipped as duplicates)" if skipped else "")
+                )
+                st.cache_data.clear()
+                st.rerun()
+
+
+# --- Page: Settings (main coordinator) ---
+def render_settings():
+    """Settings page for configuring newsletter defaults and book ledger."""
+    st.header("Settings")
+    _render_boilerplate_settings()
+    _render_book_ledger()
 
 
 # --- Page Routing ---
 # This is where we decide which page to show based on the sidebar selection.
-if page == "Dashboard":
+if page == PAGE_DASHBOARD:
     render_dashboard()
-elif page == "Add Content":
+elif page == PAGE_ADD_CONTENT:
     render_ingest_form()
-elif page == "Cluster & Draft":
+elif page == PAGE_CLUSTER_DRAFT:
     render_cluster_and_draft()
-elif page == "Settings":
+elif page == PAGE_SETTINGS:
     render_settings()

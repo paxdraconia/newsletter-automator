@@ -1,0 +1,16 @@
+[
+  {
+    "Title": "Example Book Title",
+    "Link": "https://example.com/affiliate-link",
+    "Categories": "Category",
+    "Description": "Your blurb about this book — this text is inserted into the newsletter.",
+    "Store": "AZ"
+  },
+  {
+    "Title": "Another Book",
+    "Link": "",
+    "Categories": "Leadership",
+    "Description": "Leave Link empty if you don't have an affiliate URL yet.",
+    "Store": "BS"
+  }
+]

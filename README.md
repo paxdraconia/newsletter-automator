@@ -1,87 +1,81 @@
 # Nerd Out Automator
 
-A Streamlit app for managing newsletter content using Google Sheets as a database.
+A Streamlit app for managing newsletter content using Google Sheets as a database and Gemini AI for intelligent drafting.
+
+## Features
+
+- **AI-powered topic clustering** — Gemini groups your saved links into thematic clusters
+- **Automated newsletter drafting** — Generate section-by-section drafts with editable text areas
+- **Affiliate book recommendations** — Gemini scores your book catalog for relevance, with recency weighting
+- **Cross-device persistence** — Start a draft on your PC, finish on your phone (Google Sheets as backend)
+- **Multi-publication support** — Manage multiple newsletters from one app
+- **One-click Streamlit Cloud deployment** — Works locally and in the cloud with zero code changes
 
 ## Prerequisites
 
-- **Python 3.10+** (you have 3.14 — that works)
+- **Python 3.10+**
 - **A Google account** (your regular Gmail/Google account)
-- **A Google AI Studio account** (for future Gemini AI features — optional for now)
+- **A Google AI Studio account** (for Gemini AI features) — get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 
 ## Setup Guide
 
 ### Step 1: Install Python Dependencies
 
-Open a terminal in this project folder and run:
-
 ```bash
 pip install -r requirements.txt
 ```
 
-This installs Streamlit (the app framework), gspread (Google Sheets library), and other dependencies.
-
 ### Step 2: Set Up Google Cloud (Service Account)
 
-A "service account" is like a robot Google account that your app uses to read/write Google Sheets. Here's how to create one:
+A "service account" is like a robot Google account that your app uses to read/write Google Sheets.
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Click **Select a project** (top bar) > **New Project**
+2. Click **Select a project** > **New Project**
 3. Name it something like `newsletter-automator` and click **Create**
-4. Wait for it to be created, then make sure it's selected in the top bar
 
 #### Enable the APIs
 
-5. In the left sidebar, go to **APIs & Services** > **Library**
-6. Search for **Google Sheets API** and click **Enable**
-7. Search for **Google Drive API** and click **Enable**
+4. Go to **APIs & Services** > **Library**
+5. Search for **Google Sheets API** and click **Enable**
+6. Search for **Google Drive API** and click **Enable**
 
 #### Create the Service Account
 
-8. In the left sidebar, go to **APIs & Services** > **Credentials**
-9. Click **+ Create Credentials** > **Service Account**
-10. Name it `newsletter-bot` (or anything you like) and click **Create and Continue**
-11. Skip the "Grant access" step — click **Continue**
-12. Skip the "Grant users access" step — click **Done**
+7. Go to **APIs & Services** > **Credentials**
+8. Click **+ Create Credentials** > **Service Account**
+9. Name it `newsletter-bot` and click **Create and Continue**
+10. Skip the "Grant access" steps — click **Done**
 
 #### Download the JSON Key
 
-13. You'll see your new service account in the list. Click on its email address
-14. Go to the **Keys** tab
-15. Click **Add Key** > **Create new key** > **JSON** > **Create**
-16. A `.json` file will download — **keep this file safe, it's like a password!**
-17. Move it somewhere secure (NOT inside this project folder — it's in .gitignore but best to keep it elsewhere)
+11. Click on the service account email in the list
+12. Go to the **Keys** tab > **Add Key** > **Create new key** > **JSON** > **Create**
+13. **Keep this file safe** — move it somewhere secure, NOT inside this project folder
 
 #### Note the Service Account Email
 
-18. On the service account details page, copy the **email address** (it looks like `newsletter-bot@your-project.iam.gserviceaccount.com`)
-19. You'll need this in the next step
+14. Copy the service account email (e.g., `newsletter-bot@your-project.iam.gserviceaccount.com`)
 
 ### Step 3: Create Your Google Sheet
 
 1. Go to [Google Sheets](https://sheets.google.com/) and create a new spreadsheet
-2. Name it exactly: **NerdOut_DB**
-3. Click **Share** (top right)
-4. Paste the service account email from Step 2.18
-5. Set the permission to **Editor**
-6. Uncheck "Notify people" and click **Share**
+2. Name it exactly: **NerdOut_DB** (or `YourName_DB` for a custom publication)
+3. Click **Share** > paste the service account email > set to **Editor** > **Share**
 
-The app will automatically create the required tabs (Inbound_Backlog, Book_Ledger, Draft_State) on first run.
+The app will automatically create the required tabs on first run.
 
 ### Step 4: Configure Local Development
 
-1. Copy the template file:
+1. Copy the template:
    ```bash
    cp .env.template .env
    ```
 
-2. Open `.env` and fill in your values:
+2. Fill in your values:
    ```
    GOOGLE_SERVICE_ACCOUNT_FILE=C:/Users/yourname/path/to/your-key.json
    GEMINI_API_KEY=your-gemini-api-key-here
    ```
-
-   - For the JSON path, use the full path to the file you downloaded in Step 2.16
-   - For the Gemini key, get it from [Google AI Studio](https://aistudio.google.com/apikey) (optional for now)
 
 ### Step 5: Run the App
 
@@ -89,50 +83,47 @@ The app will automatically create the required tabs (Inbound_Backlog, Book_Ledge
 streamlit run app.py
 ```
 
-The app will open in your browser. You should see the dashboard with the sidebar.
-
 ## Deploying to Streamlit Community Cloud
 
-Once you've tested locally and are ready to deploy:
-
 1. **Push to GitHub** (make sure `.gitignore` is committed first!)
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   ```
-   Then create a repo on GitHub and push.
-
-2. **Connect to Streamlit Cloud**
-   - Go to [share.streamlit.io](https://share.streamlit.io/)
-   - Click **New app** and connect your GitHub repo
-   - Set the main file to `app.py`
-
-3. **Configure Secrets**
-   - In your deployed app, go to **Settings** > **Secrets**
-   - Paste the contents following the format in `.streamlit/secrets.toml.template`
-   - For the `[gcp_service_account]` section, copy the entire contents of your JSON key file and format it as TOML (the template shows the format)
+2. Go to [share.streamlit.io](https://share.streamlit.io/) > **New app** > connect your repo
+3. Set the main file to `app.py`
+4. Go to **Settings** > **Secrets** and paste values following `.streamlit/secrets.toml.template`
 
 ## Project Structure
 
 | File | Purpose |
 |---|---|
-| `app.py` | Main Streamlit app — the UI you interact with |
-| `config.py` | Authentication — connects to Google (works locally and in the cloud) |
-| `sheets.py` | Data layer — all Google Sheets reading/writing |
+| `app.py` | Streamlit UI — page rendering and user interaction |
+| `config.py` | Authentication — credential loading for local + cloud |
+| `sheets.py` | Data layer — all Google Sheets CRUD operations |
+| `gemini.py` | AI layer — Gemini API for clustering, drafting, and book suggestions |
+| `constants.py` | Shared constants — session keys, section names, defaults |
 | `requirements.txt` | Python dependencies |
 | `.env.template` | Template for local development secrets |
 | `.streamlit/secrets.toml.template` | Template for Streamlit Cloud secrets |
+| `starter_books.json.template` | Template for bulk book import (optional) |
+
+## Starter Books (Optional)
+
+To use the bulk book import feature, create a `starter_books.json` file in the project root. See `starter_books.json.template` for the expected format. This file is gitignored since it contains personal content.
 
 ## Troubleshooting
 
 **"Could not authenticate with Google Sheets"**
 - Make sure your `.env` file exists and `GOOGLE_SERVICE_ACCOUNT_FILE` points to the right JSON file
-- Make sure the JSON file actually exists at that path
 
 **"SpreadsheetNotFound"**
-- Make sure your Google Sheet is named exactly `NerdOut_DB`
+- Make sure your Google Sheet is named exactly `NerdOut_DB` (or `YourPublication_DB`)
 - Make sure you shared it with the service account email (Editor permission)
 
 **"APIError: PERMISSION_DENIED"**
-- Make sure you enabled both the Google Sheets API AND Google Drive API in your Google Cloud project
+- Make sure you enabled both the Google Sheets API AND Google Drive API in Google Cloud
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and code conventions.
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.

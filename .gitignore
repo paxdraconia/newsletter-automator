@@ -3,6 +3,7 @@
 .streamlit/secrets.toml
 *.json
 !package.json
+!starter_books.json.template
 
 # Python
 __pycache__/

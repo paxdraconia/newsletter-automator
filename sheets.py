@@ -12,6 +12,7 @@ and rows as records.
 
 from datetime import datetime
 import gspread
+from constants import SECTION_INTRO, SECTION_FOOTER, SECTION_CLOSING, SECTION_AFFILIATE
 
 
 # --- Tab Definitions ---
@@ -41,6 +42,30 @@ ALL_TABS = {
     CONFIG_TAB: CONFIG_HEADERS,
     EPISODES_TAB: EPISODES_HEADERS,
 }
+
+
+def _clear_and_write(worksheet, rows, num_columns):
+    """Clear all data rows (row 2 onward), then write new rows.
+
+    This is the shared helper for the clear-then-write pattern used by
+    save_draft(), clear_draft(), and save_config().
+
+    Args:
+        worksheet: The gspread worksheet to operate on
+        rows: A list of lists to write (can be empty to just clear)
+        num_columns: Number of columns in the tab (for building cell ranges)
+    """
+    all_values = worksheet.get_all_values()
+    if len(all_values) > 1:
+        last_row = len(all_values)
+        end_col = chr(ord("A") + num_columns - 1)
+        worksheet.batch_clear([f"A2:{end_col}{last_row}"])
+
+    if rows:
+        end_col = chr(ord("A") + num_columns - 1)
+        worksheet.update(
+            rows, f"A2:{end_col}{1 + len(rows)}", value_input_option="USER_ENTERED"
+        )
 
 
 def get_or_create_spreadsheet(client, publication_name):
@@ -357,23 +382,9 @@ def save_draft(spreadsheet, sections):
                   ]
     """
     worksheet = spreadsheet.worksheet(DRAFT_TAB)
-
-    # Clear existing draft data (keep the header row)
-    all_values = worksheet.get_all_values()
-    if len(all_values) > 1:
-        last_row = len(all_values)
-        worksheet.batch_clear([f"A2:C{last_row}"])
-
-    # Write the new sections
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    rows = []
-    for section in sections:
-        rows.append([section["section"], section["content"], timestamp])
-
-    if rows:
-        worksheet.update(
-            rows, f"A2:C{1 + len(rows)}", value_input_option="USER_ENTERED"
-        )
+    rows = [[s["section"], s["content"], timestamp] for s in sections]
+    _clear_and_write(worksheet, rows, len(DRAFT_HEADERS))
 
 
 def read_draft(spreadsheet):
@@ -395,10 +406,7 @@ def clear_draft(spreadsheet):
     Use this when you want to start a fresh draft.
     """
     worksheet = spreadsheet.worksheet(DRAFT_TAB)
-    all_values = worksheet.get_all_values()
-    if len(all_values) > 1:
-        last_row = len(all_values)
-        worksheet.batch_clear([f"A2:C{last_row}"])
+    _clear_and_write(worksheet, [], len(DRAFT_HEADERS))
 
 
 def batch_update_backlog_statuses(spreadsheet, entry_ids, new_status):
@@ -460,19 +468,8 @@ def save_config(spreadsheet, config_dict):
         config_dict: A dict of settings, e.g. {"default_intro": "Happy Wednesday!"}
     """
     worksheet = spreadsheet.worksheet(CONFIG_TAB)
-
-    # Clear existing data (keep the header row)
-    all_values = worksheet.get_all_values()
-    if len(all_values) > 1:
-        last_row = len(all_values)
-        worksheet.batch_clear([f"A2:B{last_row}"])
-
-    # Write the new settings
     rows = [[key, value] for key, value in config_dict.items()]
-    if rows:
-        worksheet.update(
-            rows, f"A2:B{1 + len(rows)}", value_input_option="USER_ENTERED"
-        )
+    _clear_and_write(worksheet, rows, len(CONFIG_HEADERS))
 
 
 # --- Published Episodes Operations ---
@@ -502,7 +499,7 @@ def publish_episode(spreadsheet, sections, entry_ids, affiliate_book_titles=None
     # Build a title from the section names (skip Intro/Closing/Footer/Affiliate Picks)
     section_names = [
         s["section"] for s in sections
-        if s["section"] not in ("Intro", "Closing", "Footer", "Affiliate Picks")
+        if s["section"] not in (SECTION_INTRO, SECTION_CLOSING, SECTION_FOOTER, SECTION_AFFILIATE)
     ]
     title = " | ".join(section_names) if section_names else "Newsletter"
 

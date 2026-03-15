@@ -11,10 +11,45 @@ How it works:
 """
 
 import json
+import logging
 import requests
 from bs4 import BeautifulSoup
 from google import genai
 from config import get_gemini_api_key
+from constants import GEMINI_MODEL
+
+logger = logging.getLogger(__name__)
+
+
+def _call_gemini(client, prompt, response_schema, result_key):
+    """Call Gemini with structured JSON output.
+
+    Shared wrapper for all Gemini API calls in this module. Handles
+    error logging and JSON parsing in one place.
+
+    Args:
+        client: The genai Client instance
+        prompt: The prompt string to send
+        response_schema: JSON schema dict for structured output
+        result_key: The top-level key to extract from the JSON response
+
+    Returns:
+        The parsed result (list or dict), or None on failure.
+    """
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": response_schema,
+            },
+        )
+        result = json.loads(response.text)
+        return result[result_key]
+    except Exception as e:
+        logger.error("Gemini API error (%s): %s", result_key, e)
+        return None
 
 
 def get_gemini_client():
@@ -88,7 +123,7 @@ def fetch_all_titles(entries_lookup):
     return url_titles
 
 
-def cluster_entries(entries):
+def cluster_entries(entries, publication_name="Nerd Out"):
     """
     Takes a list of backlog entries and asks Gemini to group them into
     topic clusters.
@@ -123,7 +158,7 @@ def cluster_entries(entries):
             f"  Reflection: {entry['Reflection']}\n\n"
         )
 
-    prompt = f"""You are helping organize links for a newsletter called "Nerd Out."
+    prompt = f"""You are helping organize links for a newsletter called "{publication_name}."
 
 Here are the collected links and the curator's reflections on each:
 
@@ -172,23 +207,10 @@ Rules:
         "required": ["clusters"],
     }
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": response_schema,
-            },
-        )
-        result = json.loads(response.text)
-        return result["clusters"]
-    except Exception as e:
-        print(f"Gemini clustering error: {e}")
-        return None
+    return _call_gemini(client, prompt, response_schema, "clusters")
 
 
-def suggest_affiliate_books(clusters, book_ledger_entries):
+def suggest_affiliate_books(clusters, book_ledger_entries, publication_name="Nerd Out"):
     """
     Asks Gemini to score each book in the Book Ledger for relevance to the
     episode's topic clusters. Returns a ranked list of suggestions.
@@ -234,7 +256,7 @@ def suggest_affiliate_books(clusters, book_ledger_entries):
         )
 
     prompt = f"""You are helping select affiliate book recommendations for a newsletter
-called "Nerd Out" — a curated digest about tech, learning, design, and culture.
+called "{publication_name}" — a curated digest about tech, learning, design, and culture.
 
 The current episode covers these themes:
 {clusters_text}
@@ -284,23 +306,10 @@ Return ALL books, even those with low relevance scores.
         "required": ["suggestions"],
     }
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": response_schema,
-            },
-        )
-        result = json.loads(response.text)
-        return result["suggestions"]
-    except Exception as e:
-        print(f"Gemini affiliate suggestion error: {e}")
-        return None
+    return _call_gemini(client, prompt, response_schema, "suggestions")
 
 
-def generate_draft(selected_clusters, entries_lookup, url_titles=None):
+def generate_draft(selected_clusters, entries_lookup, url_titles=None, publication_name="Nerd Out"):
     """
     Takes selected clusters and their entries, and asks Gemini to generate
     a structured Markdown newsletter draft.
@@ -345,7 +354,7 @@ def generate_draft(selected_clusters, entries_lookup, url_titles=None):
                     f"  Category: {entry.get('Category', 'N/A')}\n"
                 )
 
-    prompt = f"""You are writing a newsletter called "Nerd Out" — a curated digest
+    prompt = f"""You are writing a newsletter called "{publication_name}" — a curated digest
 for curious people who love learning about tech, science, culture, and more.
 
 The tone is: enthusiastic but not hype-y, smart but accessible, like a friend
@@ -410,17 +419,4 @@ Important:
         "required": ["sections"],
     }
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": response_schema,
-            },
-        )
-        result = json.loads(response.text)
-        return result["sections"]
-    except Exception as e:
-        print(f"Gemini draft generation error: {e}")
-        return None
+    return _call_gemini(client, prompt, response_schema, "sections")
