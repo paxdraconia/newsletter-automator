@@ -34,7 +34,9 @@ def _call_gemini(client, prompt, response_schema, result_key):
         result_key: The top-level key to extract from the JSON response
 
     Returns:
-        The parsed result (list or dict), or None on failure.
+        A tuple of (result, error_message). On success, result is the parsed
+        list or dict and error_message is None. On failure, result is None
+        and error_message is a string describing the error.
     """
     try:
         response = client.models.generate_content(
@@ -46,10 +48,10 @@ def _call_gemini(client, prompt, response_schema, result_key):
             },
         )
         result = json.loads(response.text)
-        return result[result_key]
+        return result[result_key], None
     except Exception as e:
         logger.error("Gemini API error (%s): %s", result_key, e)
-        return None
+        return None, str(e)
 
 
 def get_gemini_client():
@@ -142,11 +144,12 @@ def cluster_entries(entries, publication_name="Nerd Out"):
             },
             ...
         ]
-        Returns None if the API key is missing or the call fails.
+        Returns (result, error) tuple. On failure, result is None and error
+        is a string. Returns (None, None) if the API key is not configured.
     """
     client = get_gemini_client()
     if not client:
-        return None
+        return None, None
 
     # Build the prompt with the user's entries
     entries_text = ""
@@ -232,11 +235,12 @@ def suggest_affiliate_books(clusters, book_ledger_entries, publication_name="Ner
              "reasoning": "Directly relates to..."},
             ...
         ]
-        Returns None on failure.
+        Returns (result, error) tuple. On failure, result is None and error
+        is a string. Returns (None, None) if the API key is not configured.
     """
     client = get_gemini_client()
     if not client:
-        return None
+        return None, None
 
     # Build cluster context for the prompt
     clusters_text = ""
@@ -327,11 +331,12 @@ def generate_draft(selected_clusters, entries_lookup, url_titles=None, publicati
             {"section": "AI in Education", "content": "## AI in Education\\n..."},
             {"section": "Closing", "content": "That's a wrap..."}
         ]
-        Returns None on failure.
+        Returns (result, error) tuple. On failure, result is None and error
+        is a string. Returns (None, None) if the API key is not configured.
     """
     client = get_gemini_client()
     if not client:
-        return None
+        return None, None
 
     # Build the cluster details for the prompt
     clusters_text = ""

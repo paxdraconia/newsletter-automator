@@ -1,9 +1,12 @@
 """
-constants.py - Shared constants for the Nerd Out Automator.
+constants.py - Shared constants for the Newsletter Automator.
 
 All magic strings, session state keys, and repeated values live here.
 Import what you need instead of scattering string literals across files.
 """
+
+# --- App ---
+APP_TITLE = "Newsletter Automator"
 
 # --- Gemini AI ---
 GEMINI_MODEL = "gemini-2.5-flash"

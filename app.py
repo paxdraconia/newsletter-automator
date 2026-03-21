@@ -1,5 +1,5 @@
 """
-app.py - Main Streamlit application for the Nerd Out Automator.
+app.py - Main Streamlit application for the Newsletter Automator.
 
 This is the entry point. Run it with: streamlit run app.py
 
@@ -18,6 +18,7 @@ import streamlit as st
 import pandas as pd
 from config import get_gspread_client, DEFAULT_PUBLICATION
 from constants import (
+    APP_TITLE,
     DEFAULT_CATEGORIES,
     VALID_STATUSES,
     ALL_PAGES,
@@ -73,7 +74,7 @@ from sheets import (
 # --- Page Configuration ---
 # This MUST be the first Streamlit command in the file.
 st.set_page_config(
-    page_title="Nerd Out Automator",
+    page_title=APP_TITLE,
     page_icon="📰",
     layout="wide",
 )
@@ -120,7 +121,7 @@ client = get_gspread_client()
 
 
 # --- Sidebar ---
-st.sidebar.title("Nerd Out Automator")
+st.sidebar.title(APP_TITLE)
 
 # Publication selector
 # First, discover what publications exist (sheets ending in _DB)
@@ -376,13 +377,18 @@ def _render_clustering_step(backlog_data):
                 from gemini import cluster_entries
 
                 entries_for_clustering = clusterizable.to_dict("records")
-                clusters = cluster_entries(entries_for_clustering)
+                clusters, error = cluster_entries(entries_for_clustering)
 
                 if clusters is None:
-                    st.error(
-                        "Clustering failed. Check that your Gemini API key is "
-                        "configured in .env (locally) or Streamlit Secrets (cloud)."
-                    )
+                    msg = "Clustering failed."
+                    if error:
+                        msg += f"\n\n**Error:** `{error}`"
+                    else:
+                        msg += (
+                            " Check that your Gemini API key is configured "
+                            "in .env (locally) or Streamlit Secrets (cloud)."
+                        )
+                    st.error(msg)
                 else:
                     st.session_state[SK_CLUSTERS] = clusters
                     st.session_state[SK_CLUSTER_ENTRIES] = entries_for_clustering
@@ -466,14 +472,17 @@ def _render_draft_generation_step(entries_lookup):
         with st.spinner("Gemini is writing your newsletter draft..."):
             from gemini import generate_draft
 
-            draft_sections = generate_draft(
+            draft_sections, error = generate_draft(
                 selected_clusters, entries_lookup, url_titles
             )
 
             if draft_sections is None:
-                st.error(
-                    "Draft generation failed. Check your Gemini API key."
-                )
+                msg = "Draft generation failed."
+                if error:
+                    msg += f"\n\n**Error:** `{error}`"
+                else:
+                    msg += " Check your Gemini API key."
+                st.error(msg)
             else:
                 # Auto-assemble: prepend intro, append footer from Settings
                 config = load_config(spreadsheet, spreadsheet.id)
@@ -594,12 +603,17 @@ def _render_affiliate_step():
         else:
             with st.spinner("Gemini is scoring book relevance..."):
                 from gemini import suggest_affiliate_books
-                suggestions = suggest_affiliate_books(
+                suggestions, error = suggest_affiliate_books(
                     selected_clusters_for_aff, aff_books
                 )
 
             if suggestions is None:
-                st.error("Affiliate suggestion failed. Check your Gemini API key.")
+                msg = "Affiliate suggestion failed."
+                if error:
+                    msg += f"\n\n**Error:** `{error}`"
+                else:
+                    msg += " Check your Gemini API key."
+                st.error(msg)
             else:
                 # Apply recency weighting in Python
                 book_meta = {b["Title"]: b for b in aff_books}

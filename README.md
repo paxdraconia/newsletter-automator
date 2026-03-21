@@ -1,4 +1,4 @@
-# Nerd Out Automator
+# Newsletter Automator
 
 A Streamlit app for managing newsletter content using Google Sheets as a database and Gemini AI for intelligent drafting.
 
@@ -119,6 +119,21 @@ To use the bulk book import feature, create a `starter_books.json` file in the p
 
 **"APIError: PERMISSION_DENIED"**
 - Make sure you enabled both the Google Sheets API AND Google Drive API in Google Cloud
+
+## Design Decisions
+
+Key decisions made during development and the reasoning behind them:
+
+| Decision | Why |
+|---|---|
+| **Google Sheets as database** | Cross-device access with zero infrastructure — start a draft on your PC, finish on your phone. No database server to manage. |
+| **Gemini for AI** | Free tier is generous for hobby projects. Structured JSON output mode eliminates fragile text parsing. |
+| **`google-genai` SDK** | The newer SDK replaces the deprecated `google-generativeai` package. |
+| **Pre-written affiliate blurbs** | AI-generated blurbs lack the curator's authentic voice. Blurbs are stored in the Book Ledger and inserted verbatim. |
+| **Recency weighting in Python** | Gemini scores books on topical relevance only. Recency (how recently a book was featured) is a deterministic formula applied in Python, not an AI judgment call. |
+| **Section-name-based widget keys** | Index-based Streamlit keys (`draft_section_0`) cause content to bleed between sections when new sections are inserted mid-list. Name-based keys (`draft_section_Footer`) are stable. |
+| **Service account auth** | Simpler than OAuth — no user login flow. The bot account gets Editor access to one spreadsheet. |
+| **`starter_books.json` gitignored** | Contains personal book recommendations. A `.json.template` is provided for forks. |
 
 ## Contributing
 
