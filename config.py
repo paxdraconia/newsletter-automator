@@ -50,7 +50,7 @@ def get_gspread_client():
     try:
         from dotenv import load_dotenv
 
-        load_dotenv()
+        load_dotenv(override=True)
 
         json_path = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE")
         if json_path and os.path.exists(json_path):
@@ -89,7 +89,7 @@ def get_gemini_api_key():
     try:
         from dotenv import load_dotenv
 
-        load_dotenv()
+        load_dotenv(override=True)
         return os.environ.get("GEMINI_API_KEY")
     except ImportError:
         return None
