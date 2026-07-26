@@ -10,9 +10,21 @@ Think of Google Sheets as a simple database with tabs (worksheets) as tables
 and rows as records.
 """
 
-from datetime import datetime
+import base64
+import logging
+import re
+from datetime import datetime, timezone
+
 import gspread
-from constants import SECTION_INTRO, SECTION_FOOTER, SECTION_CLOSING, SECTION_AFFILIATE
+import requests
+import yaml
+from constants import (
+    SECTION_INTRO, SECTION_FOOTER, SECTION_CLOSING, SECTION_AFFILIATE,
+    XP_STATUS_PENDING, XP_STATUS_PROCESSING, XP_STATUS_POSTED,
+    XP_STATUS_FAILED, XP_STATUS_CANCELLED, CROSS_POST_CHANNELS,
+)
+
+logger = logging.getLogger(__name__)
 
 
 # --- Tab Definitions ---
@@ -20,7 +32,12 @@ from constants import SECTION_INTRO, SECTION_FOOTER, SECTION_CLOSING, SECTION_AF
 # and their column headers. If you need to add a column later, add it here.
 
 BACKLOG_TAB = "Inbound_Backlog"
-BACKLOG_HEADERS = ["ID", "Date", "URL", "Reflection", "Category", "Status"]
+BACKLOG_HEADERS = [
+    "ID", "Date", "URL", "Reflection", "Category", "Status",
+    "Needs_Research",   # TRUE/FALSE — set at capture. Independent of whether a URL exists.
+    "Parent_ID",        # non-empty => derived by the research agent from that entry
+    "Summary",          # machine-written one-liner. NEVER written to Reflection.
+]
 
 BOOK_TAB = "Book_Ledger"
 BOOK_HEADERS = ["Title", "Link", "Categories", "Last_Used", "Times_Used", "Description", "Store"]
@@ -34,6 +51,26 @@ CONFIG_HEADERS = ["Setting", "Value"]
 EPISODES_TAB = "Published_Episodes"
 EPISODES_HEADERS = ["Episode_ID", "Publish_Date", "Title", "Entry_IDs", "Affiliate_Books"]
 
+# Cross-poster tabs (v2)
+PENDING_XP_TAB = "Pending_CrossPosts"
+PENDING_XP_HEADERS = [
+    "ID", "Episode_ID", "Source_Content", "Substack_URL",
+    "LinkedIn_Content", "LinkedIn_Scheduled_At_UTC", "LinkedIn_Status",
+    "LinkedIn_Post_URL", "LinkedIn_Error",
+    "Threads_Content", "Threads_Scheduled_At_UTC", "Threads_Status",
+    "Threads_Post_URL", "Threads_Error",
+    "Created_At_UTC", "Last_Attempted_At_UTC", "Retry_Count", "Dry_Run",
+]
+
+XP_LOG_TAB = "CrossPost_Log"
+XP_LOG_HEADERS = [
+    "Log_ID", "CrossPost_ID", "Channel", "Fired_At_UTC",
+    "Result", "Post_URL", "Error_Message", "Was_Dry_Run",
+]
+
+XP_ARCHIVE_TAB = "CrossPost_Archive"
+XP_ARCHIVE_HEADERS = PENDING_XP_HEADERS  # Same shape, different tab
+
 # All tabs and their headers, grouped for easy iteration
 ALL_TABS = {
     BACKLOG_TAB: BACKLOG_HEADERS,
@@ -41,6 +78,9 @@ ALL_TABS = {
     DRAFT_TAB: DRAFT_HEADERS,
     CONFIG_TAB: CONFIG_HEADERS,
     EPISODES_TAB: EPISODES_HEADERS,
+    PENDING_XP_TAB: PENDING_XP_HEADERS,
+    XP_LOG_TAB: XP_LOG_HEADERS,
+    XP_ARCHIVE_TAB: XP_ARCHIVE_HEADERS,
 }
 
 
@@ -164,7 +204,7 @@ def read_backlog(spreadsheet):
     return worksheet.get_all_records()
 
 
-def add_to_backlog(spreadsheet, url, reflection, category):
+def add_to_backlog(spreadsheet, url, reflection, category, needs_research=False):
     """
     Adds a new entry to the Inbound_Backlog, after checking for duplicates.
 
@@ -177,6 +217,8 @@ def add_to_backlog(spreadsheet, url, reflection, category):
         url: The article/content URL
         reflection: Your thoughts about why this is interesting
         category: Category like "Tech", "AI/ML", etc.
+        needs_research: Whether this entry needs the research agent to
+            investigate it (independent of whether a URL is present)
 
     Returns:
         A tuple of (success: bool, message: str)
@@ -206,7 +248,14 @@ def add_to_backlog(spreadsheet, url, reflection, category):
     # New entries start with status "New"
     status = "New"
 
-    row = [next_id, date_str, url, reflection, category, status]
+    needs_research_str = "TRUE" if needs_research else "FALSE"
+
+    # Parent_ID and Summary are written only by the research agent (Sprint 2),
+    # never at capture time.
+    row = [
+        next_id, date_str, url, reflection, category, status,
+        needs_research_str, "", "",
+    ]
 
     # USER_ENTERED means Google Sheets will parse the values like a human typed them
     # (so dates look like dates, numbers like numbers, etc.)
@@ -475,20 +524,34 @@ def save_config(spreadsheet, config_dict):
 # --- Published Episodes Operations ---
 
 
-def publish_episode(spreadsheet, sections, entry_ids, affiliate_book_titles=None):
+def publish_episode(
+    spreadsheet, sections, entry_ids, affiliate_book_titles=None,
+    episode_title=None, section_entry_map=None, corpus_github=None,
+):
     """
     Publishes the current draft as an episode.
 
     Records the episode in the Published_Episodes tab, updates all included
-    entries from Queued to Used, updates affiliate book usage stats, and
-    clears the draft.
+    entries from Queued to Used, updates affiliate book usage stats, writes
+    the issue to the nerdout-corpus repo, and clears the draft.
 
     Args:
         spreadsheet: The active spreadsheet
         sections: List of section dicts ({"section": str, "content": str})
-        entry_ids: List of entry IDs (ints) used in this episode
+        entry_ids: List of entry IDs (ints) used in this episode. Empty for
+                   a freehand episode with no backlog entries attached.
         affiliate_book_titles: Optional list of book title strings that were
                                included as affiliate recommendations
+        episode_title: The real editorial title, captured at publish time.
+                       Falls back to the joined section names when blank, so
+                       an empty title never fails the publish.
+        section_entry_map: Optional dict of {section_name: [entry_ids]},
+                       used to annotate each corpus source with the section
+                       it was published under.
+        corpus_github: Optional dict of GitHub API credentials for the
+                       corpus write. See config.get_corpus_github_config().
+                       If not provided (or incomplete), the corpus write is
+                       skipped entirely.
     """
     worksheet = spreadsheet.worksheet(EPISODES_TAB)
 
@@ -501,7 +564,8 @@ def publish_episode(spreadsheet, sections, entry_ids, affiliate_book_titles=None
         s["section"] for s in sections
         if s["section"] not in (SECTION_INTRO, SECTION_CLOSING, SECTION_FOOTER, SECTION_AFFILIATE)
     ]
-    title = " | ".join(section_names) if section_names else "Newsletter"
+    fallback_title = " | ".join(section_names) if section_names else "Newsletter"
+    title = episode_title.strip() if episode_title and episode_title.strip() else fallback_title
 
     date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     entry_ids_str = ",".join(str(eid) for eid in entry_ids)
@@ -510,12 +574,411 @@ def publish_episode(spreadsheet, sections, entry_ids, affiliate_book_titles=None
     row = [next_id, date_str, title, entry_ids_str, affiliate_str]
     worksheet.append_row(row, value_input_option="USER_ENTERED")
 
-    # Mark entries as Used
-    batch_update_backlog_statuses(spreadsheet, entry_ids, "Used")
+    # Mark entries as Used (freehand episodes have no entries to mark)
+    if entry_ids:
+        batch_update_backlog_statuses(spreadsheet, entry_ids, "Used")
 
     # Update affiliate book usage stats (Last_Used + Times_Used)
     if affiliate_book_titles:
         update_book_usage(spreadsheet, affiliate_book_titles)
 
+    # Corpus write — must never be able to fail a publish. The episode above
+    # is already recorded and entries already flipped to Used by this point;
+    # a bad corpus_issues_dir or a filesystem error here just gets logged.
+    try:
+        _write_corpus_issue(
+            spreadsheet, next_id, title, sections, entry_ids,
+            affiliate_book_titles, section_entry_map, corpus_github,
+        )
+    except Exception as e:
+        logger.error("Corpus write failed for episode %s: %s", next_id, e)
+
     # Clear the draft
     clear_draft(spreadsheet)
+
+    # Return the episode ID so callers (e.g., the cross-post handoff) can link
+    # the published episode to a follow-up cross-post.
+    return next_id
+
+
+def _slugify(text):
+    """Kebab-case a title for use as a corpus filename slug."""
+    text = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return text or "untitled"
+
+
+def _write_corpus_issue(
+    spreadsheet, episode_id, title, sections, entry_ids,
+    affiliate_book_titles, section_entry_map, corpus_github,
+):
+    """
+    Commits the published issue to the nerdout-corpus repo as a markdown file
+    with SCHEMA.md-shaped frontmatter, via GitHub's Contents API (this app
+    runs on Streamlit Cloud, which has no local filesystem access to a
+    corpus repo checkout). See SCHEMA.md in that repo for the field
+    contract this must match.
+    """
+    corpus_github = corpus_github or {}
+    token = corpus_github.get("token")
+    repo = corpus_github.get("repo")
+    branch = corpus_github.get("branch", "master")
+    if not token or not repo:
+        return  # Corpus GitHub credentials not configured — nothing to do.
+
+    # Map each entry_id to the section it was published under.
+    entry_to_section = {}
+    for section_name, ids in (section_entry_map or {}).items():
+        for eid in ids:
+            entry_to_section[str(eid)] = section_name
+
+    # Join entry_ids against the backlog for URL/Reflection/Category.
+    backlog_by_id = {}
+    if entry_ids:
+        backlog_by_id = {str(row.get("ID")): row for row in read_backlog(spreadsheet)}
+
+    sources = []
+    for eid in entry_ids:
+        backlog_row = backlog_by_id.get(str(eid), {})
+        sources.append({
+            "url": backlog_row.get("URL", ""),
+            "section": entry_to_section.get(str(eid), ""),
+            "reflection": backlog_row.get("Reflection", ""),
+            "category": backlog_row.get("Category", ""),
+        })
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    slug = _slugify(title)
+
+    frontmatter = {
+        "title": title,
+        "date": date_str,
+        "slug": slug,
+        "status": "published",
+        "episode_id": episode_id,
+        "substack_url": "",  # backfilled later by the cross-post flow
+        "sources": sources,
+        "affiliate_books": affiliate_book_titles or [],
+        "tags": [],
+        "positions": [],  # Sprint 2
+    }
+    fm_yaml = yaml.safe_dump(
+        frontmatter, sort_keys=False, allow_unicode=True, default_flow_style=False
+    )
+    body = "\n\n".join(s["content"] for s in sections)
+    content = f"---\n{fm_yaml}---\n\n{body}\n"
+
+    filename = f"{date_str}-{slug}.md"
+    api_url = f"https://api.github.com/repos/{repo}/contents/issues/{filename}"
+    payload = {
+        "message": f"Publish: {title}",
+        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+        "branch": branch,
+    }
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    response = requests.put(api_url, json=payload, headers=headers, timeout=15)
+    if not response.ok:
+        raise RuntimeError(
+            f"GitHub API error ({response.status_code}) writing {filename}: "
+            f"{response.text[:300]}"
+        )
+
+
+# --- Cross-Poster Operations ---
+# These functions manage the Pending_CrossPosts and CrossPost_Log tabs that
+# back the LinkedIn/Threads cross-poster (v2). Conventions:
+#   * All timestamp columns are UTC ISO 8601. The UI converts to user TZ at the edge.
+#   * Status enum per channel: pending → processing → posted | failed | cancelled.
+#   * "Post Now" flow writes a row at status=processing, then transitions to
+#     posted/failed in the same request — same code path the Phase 2 cron uses.
+
+
+def _utc_now_iso():
+    """Returns the current UTC time as a string the sheet stores cleanly."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _next_id(worksheet):
+    """Auto-incrementing ID by row count. Header is row 1, so first id = 1."""
+    return len(worksheet.get_all_values())
+
+
+def add_pending_crosspost(
+    spreadsheet,
+    *,
+    source_content,
+    substack_url,
+    linkedin_content,
+    linkedin_scheduled_at_utc,
+    threads_content,
+    threads_scheduled_at_utc,
+    episode_id="",
+    dry_run=False,
+    initial_status=XP_STATUS_PENDING,
+):
+    """
+    Append a new cross-post row.
+
+    Used by both the scheduling flow (status=pending) and the Phase 1 post-now
+    flow (status=processing — caller will transition to posted/failed
+    immediately after the API call).
+
+    Args:
+        spreadsheet: The active spreadsheet
+        source_content: Raw text used to generate previews (for audit)
+        substack_url: Optional URL appended to the post body
+        linkedin_content: The LinkedIn post text
+        linkedin_scheduled_at_utc: UTC ISO timestamp ("" for post-now)
+        threads_content: The Threads post text (single segment or thread)
+        threads_scheduled_at_utc: UTC ISO timestamp ("" for post-now)
+        episode_id: Optional Episode_ID linking to Published_Episodes
+        dry_run: If True, the cron logs the payload but skips API calls
+        initial_status: pending (default) or processing (post-now flow)
+
+    Returns:
+        The new row's ID (int).
+    """
+    worksheet = spreadsheet.worksheet(PENDING_XP_TAB)
+    new_id = _next_id(worksheet)
+    now = _utc_now_iso()
+
+    # Both channels start at the same status. If a channel has no content
+    # (user only wants one), we mark it cancelled so the cron skips it.
+    li_status = initial_status if linkedin_content else XP_STATUS_CANCELLED
+    th_status = initial_status if threads_content else XP_STATUS_CANCELLED
+
+    row = [
+        new_id,
+        episode_id or "",
+        source_content or "",
+        substack_url or "",
+        linkedin_content or "",
+        linkedin_scheduled_at_utc or "",
+        li_status,
+        "",  # LinkedIn_Post_URL
+        "",  # LinkedIn_Error
+        threads_content or "",
+        threads_scheduled_at_utc or "",
+        th_status,
+        "",  # Threads_Post_URL
+        "",  # Threads_Error
+        now,  # Created_At_UTC
+        "",   # Last_Attempted_At_UTC
+        0,    # Retry_Count
+        "TRUE" if dry_run else "FALSE",
+    ]
+    worksheet.append_row(row, value_input_option="USER_ENTERED")
+    return new_id
+
+
+def read_pending_crossposts(spreadsheet, *, include_terminal=False):
+    """
+    Read all cross-post rows.
+
+    Args:
+        spreadsheet: The active spreadsheet
+        include_terminal: If False (default), exclude rows whose BOTH channels
+                          are in a terminal state (posted/failed/cancelled).
+                          Useful for the UI's "Pending" view.
+
+    Returns:
+        List of dicts (one per row).
+    """
+    worksheet = spreadsheet.worksheet(PENDING_XP_TAB)
+    records = worksheet.get_all_records()
+
+    if include_terminal:
+        return records
+
+    terminal = {XP_STATUS_POSTED, XP_STATUS_FAILED, XP_STATUS_CANCELLED}
+    return [
+        r for r in records
+        if not (r.get("LinkedIn_Status") in terminal
+                and r.get("Threads_Status") in terminal)
+    ]
+
+
+def _row_for_crosspost(spreadsheet, crosspost_id):
+    """Find the sheet row number for a crosspost ID. Returns None if missing."""
+    worksheet = spreadsheet.worksheet(PENDING_XP_TAB)
+    try:
+        cell = worksheet.find(str(crosspost_id), in_column=1)
+        return cell.row if cell else None
+    except gspread.exceptions.CellNotFound:
+        return None
+
+
+def update_crosspost_status(
+    spreadsheet, crosspost_id, channel,
+    *, status=None, post_url=None, error_message=None,
+    last_attempted=True, increment_retry=False,
+):
+    """
+    Update the channel-specific status fields for a cross-post row.
+
+    Only the fields you pass are updated. Pass status=None to leave it alone
+    (e.g., if you only want to record an error message after a retry).
+
+    Args:
+        spreadsheet: The active spreadsheet
+        crosspost_id: The ID column value of the row to update
+        channel: "linkedin" or "threads"
+        status: New status (pending/processing/posted/failed/cancelled)
+        post_url: URL of the published post (on success)
+        error_message: Error string (on failure)
+        last_attempted: If True, stamp Last_Attempted_At_UTC = now
+        increment_retry: If True, bump Retry_Count by 1
+    """
+    if channel not in CROSS_POST_CHANNELS:
+        raise ValueError(f"Unknown channel: {channel}")
+
+    sheet_row = _row_for_crosspost(spreadsheet, crosspost_id)
+    if sheet_row is None:
+        return
+
+    worksheet = spreadsheet.worksheet(PENDING_XP_TAB)
+    prefix = "LinkedIn" if channel == "linkedin" else "Threads"
+    cells = []
+
+    def _add(col_name, value):
+        col = PENDING_XP_HEADERS.index(col_name) + 1
+        cells.append(gspread.Cell(row=sheet_row, col=col, value=value))
+
+    if status is not None:
+        _add(f"{prefix}_Status", status)
+    if post_url is not None:
+        _add(f"{prefix}_Post_URL", post_url)
+    if error_message is not None:
+        _add(f"{prefix}_Error", error_message)
+    if last_attempted:
+        _add("Last_Attempted_At_UTC", _utc_now_iso())
+    if increment_retry:
+        retry_col = PENDING_XP_HEADERS.index("Retry_Count") + 1
+        current = worksheet.cell(sheet_row, retry_col).value
+        cells.append(gspread.Cell(
+            row=sheet_row, col=retry_col, value=int(current or 0) + 1
+        ))
+
+    if cells:
+        worksheet.update_cells(cells, value_input_option="USER_ENTERED")
+
+
+def claim_crosspost(spreadsheet, crosspost_id, channel):
+    """
+    Atomically claim a row for processing.
+
+    Reads the current channel status. If still 'pending', flips to 'processing'
+    and stamps Last_Attempted_At_UTC. Returns True on successful claim, False
+    if another worker already claimed it (or it's no longer pending).
+
+    Used by the Phase 2 cron to prevent double-posting under overlapping runs.
+    Phase 1 post-now flow doesn't strictly need this, but routing through the
+    same helper keeps behavior consistent.
+    """
+    if channel not in CROSS_POST_CHANNELS:
+        raise ValueError(f"Unknown channel: {channel}")
+
+    sheet_row = _row_for_crosspost(spreadsheet, crosspost_id)
+    if sheet_row is None:
+        return False
+
+    worksheet = spreadsheet.worksheet(PENDING_XP_TAB)
+    prefix = "LinkedIn" if channel == "linkedin" else "Threads"
+    status_col = PENDING_XP_HEADERS.index(f"{prefix}_Status") + 1
+
+    current_status = worksheet.cell(sheet_row, status_col).value
+    if current_status != XP_STATUS_PENDING:
+        return False
+
+    update_crosspost_status(
+        spreadsheet, crosspost_id, channel,
+        status=XP_STATUS_PROCESSING, last_attempted=True,
+    )
+    return True
+
+
+def cancel_crosspost(spreadsheet, crosspost_id, channel=None):
+    """
+    Cancel a pending cross-post. If channel is None, cancels both channels.
+
+    Cancelled rows stay in the sheet for audit. The cron skips any row whose
+    target channel status is not 'pending'.
+    """
+    channels = [channel] if channel else list(CROSS_POST_CHANNELS)
+    for ch in channels:
+        update_crosspost_status(
+            spreadsheet, crosspost_id, ch,
+            status=XP_STATUS_CANCELLED, last_attempted=False,
+        )
+
+
+def update_crosspost_content(
+    spreadsheet, crosspost_id,
+    *, linkedin_content=None, threads_content=None,
+    linkedin_scheduled_at_utc=None, threads_scheduled_at_utc=None,
+    substack_url=None,
+):
+    """
+    Update the editable fields on a pending cross-post row.
+
+    Only fields passed (not None) are updated. Used by the Pending Posts view
+    to let the user fix typos or reschedule before the cron fires.
+    """
+    sheet_row = _row_for_crosspost(spreadsheet, crosspost_id)
+    if sheet_row is None:
+        return
+
+    worksheet = spreadsheet.worksheet(PENDING_XP_TAB)
+    cells = []
+
+    def _add(col_name, value):
+        col = PENDING_XP_HEADERS.index(col_name) + 1
+        cells.append(gspread.Cell(row=sheet_row, col=col, value=value))
+
+    if linkedin_content is not None:
+        _add("LinkedIn_Content", linkedin_content)
+    if threads_content is not None:
+        _add("Threads_Content", threads_content)
+    if linkedin_scheduled_at_utc is not None:
+        _add("LinkedIn_Scheduled_At_UTC", linkedin_scheduled_at_utc)
+    if threads_scheduled_at_utc is not None:
+        _add("Threads_Scheduled_At_UTC", threads_scheduled_at_utc)
+    if substack_url is not None:
+        _add("Substack_URL", substack_url)
+
+    if cells:
+        worksheet.update_cells(cells, value_input_option="USER_ENTERED")
+
+
+def log_crosspost_attempt(
+    spreadsheet, crosspost_id, channel, *,
+    result, post_url="", error_message="", was_dry_run=False,
+):
+    """
+    Append an entry to CrossPost_Log for a fire attempt.
+
+    Args:
+        spreadsheet: The active spreadsheet
+        crosspost_id: The Pending_CrossPosts row this attempt is for
+        channel: "linkedin" or "threads"
+        result: "posted" | "failed" | "dry_run" | "retry_scheduled"
+        post_url: Returned URL on success
+        error_message: Error string on failure
+        was_dry_run: True if this was a dry-run pass
+    """
+    worksheet = spreadsheet.worksheet(XP_LOG_TAB)
+    log_id = _next_id(worksheet)
+    row = [
+        log_id,
+        crosspost_id,
+        channel,
+        _utc_now_iso(),
+        result,
+        post_url,
+        error_message,
+        "TRUE" if was_dry_run else "FALSE",
+    ]
+    worksheet.append_row(row, value_input_option="USER_ENTERED")

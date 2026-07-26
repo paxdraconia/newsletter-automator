@@ -9,6 +9,7 @@ A Streamlit app for managing newsletter content using Google Sheets as a databas
 - **Affiliate book recommendations** — Gemini scores your book catalog for relevance, with recency weighting
 - **Cross-device persistence** — Start a draft on your PC, finish on your phone (Google Sheets as backend)
 - **Multi-publication support** — Manage multiple newsletters from one app
+- **Cross-Poster** — One-click drafting and posting to LinkedIn + Threads in your kinney-voice (dry-run by default)
 - **One-click Streamlit Cloud deployment** — Works locally and in the cloud with zero code changes
 
 ## Prerequisites
@@ -83,6 +84,47 @@ The app will automatically create the required tabs on first run.
 streamlit run app.py
 ```
 
+## Cross-Poster Setup (LinkedIn + Threads)
+
+The Cross-Poster generates kinney-voice drafts of your newsletter content for LinkedIn and Threads, then posts them through each platform's official API. **Dry-run mode is on by default**, so you can use the page end-to-end without any OAuth setup — every "post" is logged but not sent.
+
+To switch off dry-run and actually publish:
+
+### LinkedIn
+
+1. Register a LinkedIn app at [developer.linkedin.com](https://developer.linkedin.com/) > **My Apps** > **Create app**.
+2. Enable the **Share on LinkedIn** product (gives you the `w_member_social` scope).
+3. Run the OAuth Authorization Code flow against `https://www.linkedin.com/oauth/v2/authorization` with `redirect_uri=http://localhost:8501/`. Exchange the code at `https://www.linkedin.com/oauth/v2/accessToken` for a 60-day access token.
+4. Call `https://api.linkedin.com/v2/userinfo` with the token to grab your `sub` field — that's your member ID. Your URN is `urn:li:person:<sub>`.
+5. Set both values in `.env` (or Streamlit Cloud Secrets):
+   ```
+   LINKEDIN_ACCESS_TOKEN=<60-day token>
+   LINKEDIN_PERSON_URN=urn:li:person:abc123
+   ```
+
+LinkedIn tokens expire every 60 days and the open `w_member_social` scope does not issue refresh tokens. Re-run the OAuth flow when you see HTTP 401 errors.
+
+### Threads (Meta)
+
+1. Register an app at [developers.facebook.com](https://developers.facebook.com/) > **My Apps** > **Create App**.
+2. Add the **Threads** product. Enable the `threads_basic` and `threads_content_publish` scopes.
+3. Run the OAuth flow at `https://threads.net/oauth/authorize` with `redirect_uri=http://localhost:8501/threads-callback/`. Exchange the short-lived token for a 60-day long-lived token via `https://graph.threads.net/access_token?grant_type=th_exchange_token`.
+4. Get your user ID by calling `https://graph.threads.net/v1.0/me?fields=id&access_token=<token>`.
+5. Set both values:
+   ```
+   META_LONG_LIVED_TOKEN=<60-day token>
+   THREADS_USER_ID=<numeric id>
+   ```
+
+Long-lived Threads tokens can be refreshed indefinitely *before* they expire — Phase 2 will automate this.
+
+### Verify it works
+
+1. Open the app, navigate to **Cross-Post**.
+2. Leave **Dry run** ON. Paste any source content. Click **Generate Previews** then **Post Now (Dry Run)**.
+3. Check your `CrossPost_Log` tab in Google Sheets — you should see two rows with `Was_Dry_Run=TRUE`.
+4. Toggle Dry run OFF, post a test, and confirm the post appears on your LinkedIn / Threads profile.
+
 ## Deploying to Streamlit Community Cloud
 
 1. **Push to GitHub** (make sure `.gitignore` is committed first!)
@@ -98,6 +140,9 @@ streamlit run app.py
 | `config.py` | Authentication — credential loading for local + cloud |
 | `sheets.py` | Data layer — all Google Sheets CRUD operations |
 | `gemini.py` | AI layer — Gemini API for clustering, drafting, and book suggestions |
+| `cross_post.py` | Cross-Poster — LinkedIn + Threads API wrappers and orchestration |
+| `kinney_voice.py` | Loader for the kinney-voice writing style guide |
+| `kinney-voice/SKILL.md` | The kinney-voice style guide (bundled in-repo) |
 | `constants.py` | Shared constants — session keys, section names, defaults |
 | `requirements.txt` | Python dependencies |
 | `.env.template` | Template for local development secrets |
@@ -119,6 +164,12 @@ To use the bulk book import feature, create a `starter_books.json` file in the p
 
 **"APIError: PERMISSION_DENIED"**
 - Make sure you enabled both the Google Sheets API AND Google Drive API in Google Cloud
+
+**Cross-Poster: "LinkedIn token expired or invalid (HTTP 401)"**
+- Re-run the LinkedIn OAuth flow (see Cross-Poster Setup) and update `LINKEDIN_ACCESS_TOKEN`. Tokens expire every 60 days.
+
+**Cross-Poster: "credentials missing"**
+- You're trying to post for real but haven't filled in `LINKEDIN_*` or `META_*` secrets yet. Either complete the OAuth setup or leave **Dry run** toggled on.
 
 ## Design Decisions
 

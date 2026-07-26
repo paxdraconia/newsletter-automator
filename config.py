@@ -93,3 +93,86 @@ def get_gemini_api_key():
         return os.environ.get("GEMINI_API_KEY")
     except ImportError:
         return None
+
+
+def _get_secret(name):
+    """
+    Generic secret getter: tries Streamlit Cloud secrets, then local .env.
+
+    Returns None if the secret isn't set in either place. Used for the
+    cross-poster credentials so each one doesn't need its own helper.
+    """
+    try:
+        return st.secrets[name]
+    except (KeyError, FileNotFoundError):
+        pass
+
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(override=True)
+        return os.environ.get(name)
+    except ImportError:
+        return None
+
+
+def get_corpus_github_config():
+    """
+    Returns GitHub API credentials for committing published issues to the
+    nerdout-corpus repo (see sheets.py:_write_corpus_issue).
+
+    This app runs on Streamlit Cloud, which has no filesystem access to a
+    local corpus repo checkout — the corpus write goes through GitHub's
+    Contents API instead, the same way any cloud app commits to a repo it
+    doesn't have a local clone of.
+
+    Keys:
+        token:  A GitHub personal access token, fine-grained and scoped to
+                just the corpus repo, with "Contents: Read and write"
+                permission. Required — comes back None if not configured.
+        repo:   "owner/repo", e.g. "paxdraconia/nerdout-corpus"
+        branch: Target branch. Defaults to "master".
+
+    Caller should treat a missing token as "not configured" and skip the
+    corpus write (this must never be able to fail a publish).
+    """
+    return {
+        "token": _get_secret("CORPUS_GITHUB_TOKEN"),
+        "repo": _get_secret("CORPUS_GITHUB_REPO") or "paxdraconia/nerdout-corpus",
+        "branch": _get_secret("CORPUS_GITHUB_BRANCH") or "master",
+    }
+
+
+def get_linkedin_credentials():
+    """
+    Returns a dict of LinkedIn credentials for the cross-poster.
+
+    Keys:
+        access_token: OAuth bearer token (refreshed every ~60 days)
+        person_urn:   The user's URN, e.g., "urn:li:person:XXXX"
+                      (captured once during the OAuth setup flow)
+
+    Any missing value comes back as None — caller should treat that as
+    "not configured" and either skip posting or surface a setup hint.
+    """
+    return {
+        "access_token": _get_secret("LINKEDIN_ACCESS_TOKEN"),
+        "person_urn": _get_secret("LINKEDIN_PERSON_URN"),
+    }
+
+
+def get_threads_credentials():
+    """
+    Returns a dict of Threads (Meta) credentials for the cross-poster.
+
+    Keys:
+        long_lived_token: Long-lived access token (60 days, auto-refreshable)
+        user_id:          The Threads user ID (numeric string)
+        app_id:           Meta app ID (used for token refresh in Phase 2)
+        app_secret:       Meta app secret (used for token refresh in Phase 2)
+    """
+    return {
+        "long_lived_token": _get_secret("META_LONG_LIVED_TOKEN"),
+        "user_id": _get_secret("THREADS_USER_ID"),
+        "app_id": _get_secret("META_APP_ID"),
+        "app_secret": _get_secret("META_APP_SECRET"),
+    }

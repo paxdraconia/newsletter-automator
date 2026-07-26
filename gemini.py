@@ -16,7 +16,14 @@ import requests
 from bs4 import BeautifulSoup
 from google import genai
 from config import get_gemini_api_key
-from constants import GEMINI_MODEL
+from constants import (
+    GEMINI_MODEL,
+    THREADS_CHAR_LIMIT,
+    THREADS_SEGMENT_DELIMITER,
+    LINKEDIN_TARGET_MIN_WORDS,
+    LINKEDIN_TARGET_MAX_WORDS,
+)
+from kinney_voice import load_kinney_voice
 
 logger = logging.getLogger(__name__)
 
@@ -425,3 +432,137 @@ Important:
     }
 
     return _call_gemini(client, prompt, response_schema, "sections")
+
+
+# --- Cross-Poster Preview Generators ---
+# Both functions feed the kinney-voice SKILL.md into the prompt so Gemini drafts
+# in Alyn's voice. They return (text, error) tuples for parity with the
+# existing helpers above.
+
+
+def _url_instruction(substack_url, *, channel):
+    """Build the URL-handling clause for a cross-post prompt."""
+    if substack_url:
+        if channel == "linkedin":
+            return f'End with a single line: "Full post: {substack_url}"'
+        # Threads: append the URL on its own line; the 500-char budget includes it.
+        return f'Append the URL "{substack_url}" on a final line within the character budget.'
+    return "Do not include any URL."
+
+
+def generate_linkedin_preview(source_content, substack_url=""):
+    """
+    Generate a LinkedIn post draft in Alyn Kinney's voice.
+
+    Args:
+        source_content: Raw text to draft from (newsletter excerpt, idea, etc.)
+        substack_url: Optional URL to link out to at the end of the post
+
+    Returns:
+        Tuple of (post_text, error). On success, post_text is the draft string.
+        On failure, post_text is None and error is a string.
+        Returns (None, None) if the API key is not configured.
+    """
+    client = get_gemini_client()
+    if not client:
+        return None, None
+
+    voice = load_kinney_voice()
+    url_clause = _url_instruction(substack_url, channel="linkedin")
+
+    prompt = f"""You are writing a LinkedIn post in Alyn Kinney's voice.
+
+VOICE GUIDE (from kinney-voice SKILL.md):
+{voice}
+
+SOURCE CONTENT (newsletter excerpt or idea):
+{source_content}
+
+CONSTRAINTS:
+- {LINKEDIN_TARGET_MIN_WORDS}-{LINKEDIN_TARGET_MAX_WORDS} words target length
+- One detonating opening line
+- Body delivers the insight, not a summary
+- Closes with a door, not a warning
+- {url_clause}
+- No emojis unless they earn their keep
+- No em-dashes (per kinney-voice)
+- No cliche modifier-noun pairs
+
+OUTPUT: Just the post text. No preamble, no explanation, no quotation marks.
+"""
+
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "post": {
+                "type": "string",
+                "description": "The complete LinkedIn post text in kinney-voice.",
+            }
+        },
+        "required": ["post"],
+    }
+
+    return _call_gemini(client, prompt, response_schema, "post")
+
+
+def generate_threads_preview(source_content, substack_url=""):
+    """
+    Generate a Threads post draft in Alyn Kinney's voice.
+
+    Threads has a hard 500-char limit per segment. If the idea doesn't fit in
+    one post, Gemini returns a 2-3 segment thread separated by ---THREAD---.
+
+    Args:
+        source_content: Raw text to draft from
+        substack_url: Optional URL to append at the end
+
+    Returns:
+        Tuple of (post_text, error). post_text uses ---THREAD--- between
+        segments if Gemini chose to thread it. Caller is responsible for
+        splitting and posting as a chain.
+    """
+    client = get_gemini_client()
+    if not client:
+        return None, None
+
+    voice = load_kinney_voice()
+    url_clause = _url_instruction(substack_url, channel="threads")
+
+    prompt = f"""You are writing a Threads post in Alyn Kinney's voice.
+
+VOICE GUIDE (from kinney-voice SKILL.md):
+{voice}
+
+SOURCE CONTENT:
+{source_content}
+
+CONSTRAINTS:
+- HARD LIMIT: {THREADS_CHAR_LIMIT} characters total per segment, including any URL
+- {url_clause}
+- One sharp idea, not a summary
+- Open with the claim, not the setup
+- No em-dashes
+- No throat-clearing
+
+If the idea doesn't fit in {THREADS_CHAR_LIMIT} chars as a single post, output
+a thread of 2-3 segments separated by "{THREADS_SEGMENT_DELIMITER}". Each
+segment must be under {THREADS_CHAR_LIMIT} chars.
+
+OUTPUT: Just the post text. No preamble.
+"""
+
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "post": {
+                "type": "string",
+                "description": (
+                    f"The Threads post text. Use '{THREADS_SEGMENT_DELIMITER}' "
+                    "between segments if threading."
+                ),
+            }
+        },
+        "required": ["post"],
+    }
+
+    return _call_gemini(client, prompt, response_schema, "post")

@@ -16,7 +16,7 @@ import json
 import os
 import streamlit as st
 import pandas as pd
-from config import get_gspread_client, DEFAULT_PUBLICATION
+from config import get_gspread_client, get_corpus_github_config, DEFAULT_PUBLICATION
 from constants import (
     APP_TITLE,
     DEFAULT_CATEGORIES,
@@ -25,6 +25,7 @@ from constants import (
     PAGE_DASHBOARD,
     PAGE_ADD_CONTENT,
     PAGE_CLUSTER_DRAFT,
+    PAGE_CROSS_POST,
     PAGE_SETTINGS,
     SECTION_INTRO,
     SECTION_FOOTER,
@@ -40,8 +41,24 @@ from constants import (
     SK_CONFIRM_PUBLISH,
     SK_AFFILIATE_SUGGESTIONS,
     SK_AFFILIATE_BOOK_TITLES,
+    SK_XP_SOURCE,
+    SK_XP_SUBSTACK_URL,
+    SK_XP_LINKEDIN_DRAFT,
+    SK_XP_THREADS_DRAFT,
+    SK_XP_FROM_EPISODE,
+    SK_XP_EPISODE_ID,
+    SK_XP_DRY_RUN,
+    SK_XP_LAST_RESULT,
+    SK_JUST_PUBLISHED,
     DRAFT_SESSION_KEYS,
+    XP_SESSION_KEYS,
+    THREADS_CHAR_LIMIT,
+    CHANNEL_LINKEDIN,
+    CHANNEL_THREADS,
 )
+
+# Navigation intent key — set by buttons to navigate on the next render
+_SK_NAVIGATE_TO = "_navigate_to"
 
 # Starter books loaded from an optional JSON file (gitignored — personal data).
 # See starter_books.json.template for the expected format.
@@ -119,6 +136,11 @@ def ensure_tabs_cached(_spreadsheet, spreadsheet_id):
 # This runs once and is cached. If it fails, config.py shows an error and stops.
 client = get_gspread_client()
 
+# --- Navigation Intent ---
+# Buttons can't directly modify page_nav (the widget key), but they can set
+# _navigate_to. We check it here and apply it to page_nav before rendering the sidebar.
+if _SK_NAVIGATE_TO in st.session_state:
+    st.session_state["page_nav"] = st.session_state.pop(_SK_NAVIGATE_TO)
 
 # --- Sidebar ---
 st.sidebar.title(APP_TITLE)
@@ -138,11 +160,16 @@ selected_pub = st.sidebar.selectbox(
     help="Each publication has its own Google Sheet database.",
 )
 
-# Page navigation — now includes "Cluster & Draft" for the AI workflow
+# Page navigation. Bound via key="page_nav" so other flows can navigate
+# programmatically (e.g., the post-publish "Cross-Post This Episode" button
+# writes PAGE_CROSS_POST into st.session_state["page_nav"] and reruns).
+if "page_nav" not in st.session_state:
+    st.session_state["page_nav"] = ALL_PAGES[0]
+
 page = st.sidebar.radio(
     "Navigate",
     options=ALL_PAGES,
-    index=0,
+    key="page_nav",
 )
 
 # Manage Publications (expandable section in sidebar)
@@ -218,6 +245,12 @@ def render_ingest_form():
 
         category_input = st.selectbox("Category", options=categories)
 
+        needs_research_input = st.checkbox(
+            "I need to research this",
+            help="Flags this entry for the research agent. Independent of "
+            "whether a URL is present.",
+        )
+
         submitted = st.form_submit_button("Add to Backlog", type="primary")
 
     if submitted:
@@ -239,7 +272,8 @@ def render_ingest_form():
 
         # Save to Google Sheets
         success, message = add_to_backlog(
-            spreadsheet, url_clean, reflection_clean, category_input
+            spreadsheet, url_clean, reflection_clean, category_input,
+            needs_research=needs_research_input,
         )
 
         if success:
@@ -770,15 +804,21 @@ def _render_draft_actions(edited_sections):
         draft_entry_ids = st.session_state.get(SK_DRAFT_ENTRY_IDS, [])
         if st.button(
             "Publish",
-            disabled=not draft_entry_ids,
             help="Mark entries as Used, record the episode, and clear the draft."
             if draft_entry_ids else
-            "Not available \u2014 draft was loaded from saved state without entry tracking.",
+            "Record the episode and clear the draft. No backlog entries to "
+            "mark \u2014 this is a freehand episode.",
         ):
             st.session_state[SK_CONFIRM_PUBLISH] = True
 
     # --- Publish Confirmation ---
     if st.session_state.get(SK_CONFIRM_PUBLISH, False):
+        episode_title = st.text_input(
+            "Episode title",
+            key="publish_episode_title",
+            help="The real title. Used for the archive filename and Published_Episodes.",
+        )
+
         aff_titles = st.session_state.get(SK_AFFILIATE_BOOK_TITLES, [])
         aff_note = ""
         if aff_titles:
@@ -793,18 +833,38 @@ def _render_draft_actions(edited_sections):
         conf_col1, conf_col2 = st.columns(2)
         with conf_col1:
             if st.button("Yes, Publish"):
-                publish_episode(
+                # Capture the source for the cross-post handoff BEFORE we clear
+                # draft state. We use the Intro section if present (typically
+                # the most cross-post-worthy hook) and fall back to the full
+                # concatenated draft.
+                intro_section = next(
+                    (s["content"] for s in edited_sections
+                     if s["section"] == SECTION_INTRO),
+                    "",
+                )
+                full_text = "\n\n".join(s["content"] for s in edited_sections)
+                source_for_xp = intro_section or full_text
+
+                episode_id = publish_episode(
                     spreadsheet,
                     edited_sections,
-                    st.session_state[SK_DRAFT_ENTRY_IDS],
+                    st.session_state.get(SK_DRAFT_ENTRY_IDS, []),
                     affiliate_book_titles=st.session_state.get(
                         SK_AFFILIATE_BOOK_TITLES, []
                     ),
+                    episode_title=episode_title,
+                    section_entry_map=st.session_state.get(SK_SECTION_ENTRY_MAP, {}),
+                    corpus_github=get_corpus_github_config(),
                 )
                 for key in DRAFT_SESSION_KEYS:
                     st.session_state.pop(key, None)
+                # Flash payload for the post-publish "Cross-Post This Episode"
+                # handoff. Read once on the next render of Cluster & Draft.
+                st.session_state[SK_JUST_PUBLISHED] = {
+                    "episode_id": episode_id,
+                    "source_content": source_for_xp,
+                }
                 st.cache_data.clear()
-                st.success("Published! Entries marked as Used.")
                 st.rerun()
         with conf_col2:
             if st.button("Cancel"):
@@ -833,6 +893,36 @@ def render_cluster_and_draft():
     5. Come back later (even on a different device) to resume editing
     """
     st.header("Cluster & Draft")
+
+    # --- Post-publish flash: offer Cross-Post handoff once ---
+    just_pub = st.session_state.get(SK_JUST_PUBLISHED)
+    if just_pub:
+        st.success(
+            f"Published episode #{just_pub['episode_id']}! "
+            "Entries marked as Used."
+        )
+        with st.container(border=True):
+            st.markdown(
+                "**Cross-post this episode to LinkedIn and Threads?** "
+                "We'll pre-fill the source content. You'll add the Substack URL "
+                "after you publish on Substack."
+            )
+            if st.button("Cross-Post This Episode", type="primary",
+                         key="xp_handoff_btn"):
+                st.session_state[SK_XP_SOURCE] = just_pub["source_content"]
+                st.session_state[SK_XP_EPISODE_ID] = just_pub["episode_id"]
+                st.session_state[SK_XP_FROM_EPISODE] = True
+                st.session_state[SK_XP_SUBSTACK_URL] = ""
+                # Clear any leftover preview drafts from a prior session
+                st.session_state.pop(SK_XP_LINKEDIN_DRAFT, None)
+                st.session_state.pop(SK_XP_THREADS_DRAFT, None)
+                st.session_state.pop(SK_XP_LAST_RESULT, None)
+                st.session_state.pop(SK_JUST_PUBLISHED, None)
+                st.session_state[_SK_NAVIGATE_TO] = PAGE_CROSS_POST
+                st.rerun()
+            if st.button("Dismiss", key="xp_dismiss_btn"):
+                st.session_state.pop(SK_JUST_PUBLISHED, None)
+                st.rerun()
 
     # --- Step 1: Clustering ---
     st.subheader("Step 1: Cluster Your Links")
@@ -1136,6 +1226,237 @@ def render_settings():
     _render_book_ledger()
 
 
+# --- Page: Cross-Post -------------------------------------------------------
+
+
+def _render_threads_char_counter(content):
+    """Show per-segment char counts for a Threads draft, with over-limit warnings."""
+    from cross_post import split_threads_content
+    segments = split_threads_content(content)
+    if not segments:
+        st.caption(f"0 / {THREADS_CHAR_LIMIT} chars")
+        return
+    if len(segments) == 1:
+        n = len(segments[0])
+        if n > THREADS_CHAR_LIMIT:
+            st.error(
+                f"{n} / {THREADS_CHAR_LIMIT} chars — over the limit "
+                f"by {n - THREADS_CHAR_LIMIT}. Threads will reject this."
+            )
+        else:
+            st.caption(f"{n} / {THREADS_CHAR_LIMIT} chars")
+        return
+    # Multi-segment thread
+    rows = []
+    any_over = False
+    for i, seg in enumerate(segments, 1):
+        n = len(seg)
+        marker = "❗" if n > THREADS_CHAR_LIMIT else "✓"
+        any_over = any_over or (n > THREADS_CHAR_LIMIT)
+        rows.append(f"{marker} Segment {i}: {n} / {THREADS_CHAR_LIMIT}")
+    summary = " · ".join(rows)
+    if any_over:
+        st.error(f"Thread of {len(segments)}: {summary}")
+    else:
+        st.caption(f"Thread of {len(segments)}: {summary}")
+
+
+def render_cross_post():
+    """Cross-Post page: draft, preview, edit, and post to LinkedIn + Threads."""
+    st.header("Cross-Post")
+    st.caption(
+        "Draft LinkedIn and Threads posts in Alyn's voice from any source "
+        "content (a newsletter excerpt, an article, or a raw idea). "
+        "Phase 1: post immediately. Scheduling lands in Phase 2."
+    )
+
+    from_episode = st.session_state.get(SK_XP_FROM_EPISODE, False)
+    if from_episode:
+        st.info(
+            f"Set up from episode #{st.session_state.get(SK_XP_EPISODE_ID, '?')}. "
+            "Paste your Substack URL below — it's required for episode "
+            "cross-posts so the post can link back to the published piece."
+        )
+
+    # --- Source content + Substack URL ---
+    # Bind text widgets directly to the SK_XP_* keys via `key=` so that other
+    # flows (the post-publish handoff) can set values via st.session_state and
+    # have them appear in the widget on the next render.
+    if SK_XP_SOURCE not in st.session_state:
+        st.session_state[SK_XP_SOURCE] = ""
+    if SK_XP_SUBSTACK_URL not in st.session_state:
+        st.session_state[SK_XP_SUBSTACK_URL] = ""
+
+    source = st.text_area(
+        "Source content",
+        height=180,
+        key=SK_XP_SOURCE,
+        placeholder="Paste a newsletter excerpt, article, or raw idea here...",
+    )
+
+    substack_url = st.text_input(
+        "Substack URL" + (" (required)" if from_episode else " (optional)"),
+        key=SK_XP_SUBSTACK_URL,
+        placeholder="https://yournewsletter.substack.com/p/your-post-slug",
+        help=(
+            "Required when cross-posting an episode — the post needs to "
+            "link back. Optional for ad-hoc posts."
+            if from_episode else
+            "Optional. If provided, LinkedIn appends 'Full post: <url>' and "
+            "Threads will fit the URL in its 500-char budget."
+        ),
+    )
+
+    # --- Generate Previews ---
+    gen_col, dry_col = st.columns([2, 1])
+    with gen_col:
+        if st.button(
+            "Generate Previews", type="primary", key="xp_generate_btn",
+            disabled=not source.strip(),
+            help="Asks Gemini to draft both posts in kinney-voice.",
+        ):
+            from gemini import generate_linkedin_preview, generate_threads_preview
+            with st.spinner("Drafting LinkedIn post..."):
+                li_text, li_err = generate_linkedin_preview(
+                    source.strip(), substack_url.strip(),
+                )
+            with st.spinner("Drafting Threads post..."):
+                th_text, th_err = generate_threads_preview(
+                    source.strip(), substack_url.strip(),
+                )
+            if li_text is None or th_text is None:
+                msg = "Preview generation failed."
+                err = li_err or th_err
+                if err:
+                    msg += f"\n\n**Error:** `{err}`"
+                else:
+                    msg += " Check that GEMINI_API_KEY is configured."
+                st.error(msg)
+            else:
+                st.session_state[SK_XP_LINKEDIN_DRAFT] = li_text
+                st.session_state[SK_XP_THREADS_DRAFT] = th_text
+                st.session_state.pop(SK_XP_LAST_RESULT, None)
+                st.success("Previews ready. Edit below, then Post Now.")
+    with dry_col:
+        dry_run = st.toggle(
+            "Dry run",
+            value=st.session_state.get(SK_XP_DRY_RUN, True),
+            key="xp_dry_run_toggle",
+            help=(
+                "ON: log the would-be payload but don't actually post. "
+                "Use this until you've finished OAuth setup."
+            ),
+        )
+        st.session_state[SK_XP_DRY_RUN] = dry_run
+
+    # --- Editable Previews ---
+    li_draft = st.session_state.get(SK_XP_LINKEDIN_DRAFT)
+    th_draft = st.session_state.get(SK_XP_THREADS_DRAFT)
+
+    if li_draft is not None or th_draft is not None:
+        st.divider()
+        st.subheader("Edit Previews")
+
+        li_col, th_col = st.columns(2)
+
+        with li_col:
+            st.markdown("**LinkedIn**")
+            li_edited = st.text_area(
+                "LinkedIn post",
+                height=320,
+                key=SK_XP_LINKEDIN_DRAFT,
+                label_visibility="collapsed",
+            )
+            words = len([w for w in li_edited.split() if w.strip()])
+            st.caption(f"{words} words · {len(li_edited)} chars")
+
+        with th_col:
+            st.markdown("**Threads**")
+            th_edited = st.text_area(
+                "Threads post",
+                height=320,
+                key=SK_XP_THREADS_DRAFT,
+                label_visibility="collapsed",
+                help=(
+                    f"Hard cap: {THREADS_CHAR_LIMIT} chars per segment. Use "
+                    "'---THREAD---' on its own line to split into a thread."
+                ),
+            )
+            _render_threads_char_counter(th_edited)
+
+        # --- Post Now ---
+        st.divider()
+
+        # Hard gate: episode flow requires Substack URL
+        gate_blocked = from_episode and not substack_url.strip()
+        if gate_blocked:
+            st.warning(
+                "Substack URL is required to cross-post an episode. "
+                "Paste it above to enable Post Now."
+            )
+
+        # Threads hard limit gate
+        from cross_post import threads_segments_within_limit
+        threads_ok, _ = threads_segments_within_limit(th_edited)
+        if not threads_ok:
+            st.warning(
+                "One or more Threads segments exceed the 500-char limit. "
+                "Edit the post until the counter goes green."
+            )
+
+        post_disabled = (
+            gate_blocked
+            or not threads_ok
+            or not (li_edited.strip() or th_edited.strip())
+        )
+
+        post_col, reset_col = st.columns([2, 1])
+        with post_col:
+            mode_label = "Post Now (Dry Run)" if dry_run else "Post Now"
+            if st.button(
+                mode_label, type="primary", key="xp_post_now_btn",
+                disabled=post_disabled,
+            ):
+                from cross_post import post_now
+                with st.spinner("Posting..."):
+                    result = post_now(
+                        spreadsheet,
+                        source_content=source.strip(),
+                        substack_url=substack_url.strip(),
+                        linkedin_content=li_edited.strip(),
+                        threads_content=th_edited.strip(),
+                        episode_id=str(
+                            st.session_state.get(SK_XP_EPISODE_ID, "")
+                        ),
+                        dry_run=dry_run,
+                    )
+                st.session_state[SK_XP_LAST_RESULT] = result
+
+        with reset_col:
+            if st.button("Reset", key="xp_reset_btn"):
+                for key in XP_SESSION_KEYS:
+                    st.session_state.pop(key, None)
+                st.rerun()
+
+    # --- Last Post Result ---
+    last_result = st.session_state.get(SK_XP_LAST_RESULT)
+    if last_result:
+        st.divider()
+        st.subheader(f"Last attempt (CrossPost #{last_result['crosspost_id']})")
+        for channel, outcome in last_result["channels"].items():
+            label = "LinkedIn" if channel == CHANNEL_LINKEDIN else "Threads"
+            status = outcome["status"]
+            if status == "posted":
+                if outcome["url"].startswith("[DRY RUN"):
+                    st.info(f"**{label}:** dry-run logged — `{outcome['url']}`")
+                else:
+                    st.success(f"**{label}:** posted — [view post]({outcome['url']})")
+            elif status == "failed":
+                st.error(f"**{label}:** failed — {outcome['error']}")
+            elif status == "skipped":
+                st.caption(f"**{label}:** skipped (no content)")
+
+
 # --- Page Routing ---
 # This is where we decide which page to show based on the sidebar selection.
 if page == PAGE_DASHBOARD:
@@ -1144,5 +1465,7 @@ elif page == PAGE_ADD_CONTENT:
     render_ingest_form()
 elif page == PAGE_CLUSTER_DRAFT:
     render_cluster_and_draft()
+elif page == PAGE_CROSS_POST:
+    render_cross_post()
 elif page == PAGE_SETTINGS:
     render_settings()
