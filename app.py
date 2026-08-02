@@ -82,6 +82,7 @@ from sheets import (
     read_config,
     save_config,
     publish_episode,
+    compute_fallback_title,
     read_book_ledger,
     add_to_book_ledger,
     update_book_ledger_entry,
@@ -818,6 +819,12 @@ def _render_draft_actions(edited_sections):
             key="publish_episode_title",
             help="The real title. Used for the archive filename and Published_Episodes.",
         )
+        if not episode_title or not episode_title.strip():
+            st.warning(
+                "Title is blank — will fall back to "
+                f"**\"{compute_fallback_title(edited_sections)}\"** for the "
+                "archive filename and Published_Episodes."
+            )
 
         aff_titles = st.session_state.get(SK_AFFILIATE_BOOK_TITLES, [])
         aff_note = ""

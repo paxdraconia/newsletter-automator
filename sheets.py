@@ -524,6 +524,20 @@ def save_config(spreadsheet, config_dict):
 # --- Published Episodes Operations ---
 
 
+def compute_fallback_title(sections):
+    """
+    The title used when no editorial title is given: section names joined
+    with " | ", skipping Intro/Closing/Footer/Affiliate Picks. Shared between
+    publish_episode() and the app.py "title is blank" warning so they can
+    never drift apart.
+    """
+    section_names = [
+        s["section"] for s in sections
+        if s["section"] not in (SECTION_INTRO, SECTION_CLOSING, SECTION_FOOTER, SECTION_AFFILIATE)
+    ]
+    return " | ".join(section_names) if section_names else "Newsletter"
+
+
 def publish_episode(
     spreadsheet, sections, entry_ids, affiliate_book_titles=None,
     episode_title=None, section_entry_map=None, corpus_github=None,
@@ -559,12 +573,7 @@ def publish_episode(
     all_values = worksheet.get_all_values()
     next_id = len(all_values)  # Same pattern as backlog IDs
 
-    # Build a title from the section names (skip Intro/Closing/Footer/Affiliate Picks)
-    section_names = [
-        s["section"] for s in sections
-        if s["section"] not in (SECTION_INTRO, SECTION_CLOSING, SECTION_FOOTER, SECTION_AFFILIATE)
-    ]
-    fallback_title = " | ".join(section_names) if section_names else "Newsletter"
+    fallback_title = compute_fallback_title(sections)
     title = episode_title.strip() if episode_title and episode_title.strip() else fallback_title
 
     date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
