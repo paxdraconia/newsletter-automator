@@ -22,7 +22,7 @@ short_resp = requests.post(
         "client_id": THREADS_APP_ID,
         "client_secret": THREADS_APP_SECRET,
         "grant_type": "authorization_code",
-        "redirect_uri": "http://localhost:8501/threads-callback/",
+        "redirect_uri": "https://example.com/threads-callback/",
         "code": CODE,
     }
 )

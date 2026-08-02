@@ -16,7 +16,12 @@ import json
 import os
 import streamlit as st
 import pandas as pd
-from config import get_gspread_client, get_corpus_github_config, DEFAULT_PUBLICATION
+from config import (
+    get_gspread_client,
+    get_corpus_github_config,
+    get_credentials_diagnostics,
+    DEFAULT_PUBLICATION,
+)
 from constants import (
     APP_TITLE,
     DEFAULT_CATEGORIES,
@@ -1227,11 +1232,45 @@ def _render_book_ledger():
 
 
 # --- Page: Settings (main coordinator) ---
+def _render_credentials_status():
+    """Diagnostic: which credentials the app can actually see. No values shown."""
+    st.divider()
+    with st.expander("Credentials status (troubleshooting)"):
+        st.caption(
+            "Shows which credentials this app can resolve right now. Values are "
+            "never displayed — only whether each one resolved and how many "
+            "characters it is, which is enough to tell 'set' from 'empty' or "
+            "'truncated'."
+        )
+        top_level, rows = get_credentials_diagnostics()
+
+        st.dataframe(rows, hide_index=True, use_container_width=True)
+
+        st.markdown("**Top-level keys visible in Streamlit secrets**")
+        if top_level:
+            st.code("\n".join(top_level))
+            st.caption(
+                "If a credential above shows Resolved = False but you've added "
+                "it to Secrets, check that it appears in this list. Bare "
+                "`KEY = \"value\"` entries must come *before* the first "
+                "`[section]` header (like `[gcp_service_account]`) — anything "
+                "after one gets nested inside that section instead of staying "
+                "top-level."
+            )
+        else:
+            st.info(
+                "No Streamlit secrets found — the app is falling back to a "
+                "local .env file. Expected when running locally; on Streamlit "
+                "Cloud it means the Secrets panel is empty or failed to parse."
+            )
+
+
 def render_settings():
     """Settings page for configuring newsletter defaults and book ledger."""
     st.header("Settings")
     _render_boilerplate_settings()
     _render_book_ledger()
+    _render_credentials_status()
 
 
 # --- Page: Cross-Post -------------------------------------------------------

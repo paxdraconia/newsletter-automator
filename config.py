@@ -115,6 +115,51 @@ def _get_secret(name):
         return None
 
 
+# Every credential the app expects, grouped by the feature that needs it.
+# Used only by the Settings > Credentials status diagnostic.
+EXPECTED_SECRETS = {
+    "Gemini AI": ["GEMINI_API_KEY"],
+    "Cross-Poster: LinkedIn": ["LINKEDIN_ACCESS_TOKEN", "LINKEDIN_PERSON_URN"],
+    "Cross-Poster: Threads": ["META_LONG_LIVED_TOKEN", "THREADS_USER_ID"],
+    "Corpus write": ["CORPUS_GITHUB_TOKEN"],
+}
+
+
+def get_credentials_diagnostics():
+    """
+    Reports which credentials the app can actually resolve, for troubleshooting
+    "credentials missing" errors without anyone having to paste secrets around.
+
+    Returns (top_level_secret_names, rows) where rows is a list of dicts with
+    the credential name, its feature group, whether it resolved, and its
+    character length. **Never returns the values themselves** — length is
+    enough to tell "set" from "empty" or "truncated" while staying safe to
+    render in the UI.
+
+    top_level_secret_names is the list of keys Streamlit sees at the top level
+    of secrets.toml, which is what catches the common TOML mistake of putting
+    bare keys after a [section] header (where they get nested into that
+    section instead of staying top-level).
+    """
+    try:
+        top_level = sorted(st.secrets.keys())
+    except Exception:
+        top_level = []  # No secrets.toml at all — local .env only.
+
+    rows = []
+    for group, names in EXPECTED_SECRETS.items():
+        for name in names:
+            value = _get_secret(name)
+            rows.append({
+                "Credential": name,
+                "Used by": group,
+                "Resolved": bool(value),
+                "Length": len(value) if value else 0,
+                "In st.secrets (top level)": name in top_level,
+            })
+    return top_level, rows
+
+
 def get_corpus_github_config():
     """
     Returns GitHub API credentials for committing published issues to the
