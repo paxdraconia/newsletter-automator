@@ -41,6 +41,14 @@ SK_XP_FROM_EPISODE = "xp_from_episode"   # True when arrived via post-publish bu
 SK_XP_EPISODE_ID = "xp_episode_id"       # Episode_ID of the source episode
 SK_XP_DRY_RUN = "xp_dry_run"
 SK_XP_LAST_RESULT = "xp_last_result"     # Last post_now result for inline feedback
+SK_XP_WRITE_MODE = "xp_write_mode"       # XP_MODE_AI or XP_MODE_FREEHAND
+SK_XP_POST_LINKEDIN = "xp_post_linkedin"  # Channel opt-in checkbox
+SK_XP_POST_THREADS = "xp_post_threads"    # Channel opt-in checkbox
+
+# Cross-post content authoring modes. Freehand skips Gemini entirely so
+# writing your own post doesn't burn tokens.
+XP_MODE_AI = "Generate with AI"
+XP_MODE_FREEHAND = "Write my own"
 
 # Flash state set by publish, read by the next Cluster & Draft render.
 # Holds {"episode_id": int, "source_content": str} so we can offer a
@@ -71,6 +79,7 @@ XP_SESSION_KEYS = [
     SK_XP_FROM_EPISODE,
     SK_XP_EPISODE_ID,
     SK_XP_LAST_RESULT,
+    SK_XP_WRITE_MODE,
 ]
 
 # --- Content categories ---

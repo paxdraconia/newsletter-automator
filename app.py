@@ -54,6 +54,11 @@ from constants import (
     SK_XP_EPISODE_ID,
     SK_XP_DRY_RUN,
     SK_XP_LAST_RESULT,
+    SK_XP_WRITE_MODE,
+    SK_XP_POST_LINKEDIN,
+    SK_XP_POST_THREADS,
+    XP_MODE_AI,
+    XP_MODE_FREEHAND,
     SK_JUST_PUBLISHED,
     DRAFT_SESSION_KEYS,
     XP_SESSION_KEYS,
@@ -89,6 +94,7 @@ from sheets import (
     publish_episode,
     compute_fallback_title,
     update_corpus_substack_url,
+    read_published_episodes,
     read_book_ledger,
     add_to_book_ledger,
     update_book_ledger_entry,
@@ -1317,13 +1323,40 @@ def render_cross_post():
         "Phase 1: post immediately. Scheduling lands in Phase 2."
     )
 
-    from_episode = st.session_state.get(SK_XP_FROM_EPISODE, False)
-    if from_episode:
-        st.info(
-            f"Set up from episode #{st.session_state.get(SK_XP_EPISODE_ID, '?')}. "
-            "Paste your Substack URL below — it's required for episode "
-            "cross-posts so the post can link back to the published piece."
-        )
+    # --- Episode attachment ---
+    # An episode can be attached two ways: the post-publish handoff pre-sets
+    # SK_XP_EPISODE_ID (which this picker picks up as its default), or you
+    # choose one here any time afterward. Attaching an episode is what lets
+    # the corpus file's substack_url get backfilled after posting, so this
+    # picker is what makes that possible outside the publish session.
+    ep_options = {0: "— None (ad-hoc post) —"}
+    try:
+        for ep in read_published_episodes(spreadsheet):
+            eid = ep.get("Episode_ID")
+            if eid in (None, ""):
+                continue
+            ep_options[int(eid)] = f"#{eid} — {str(ep.get('Title', ''))[:70]}"
+    except Exception as e:
+        st.caption(f"Could not load episodes for the picker: {e}")
+
+    try:
+        current_ep = int(st.session_state.get(SK_XP_EPISODE_ID) or 0)
+    except (TypeError, ValueError):
+        current_ep = 0
+    option_keys = list(ep_options.keys())
+
+    selected_ep = st.selectbox(
+        "Attach to episode",
+        options=option_keys,
+        index=option_keys.index(current_ep) if current_ep in option_keys else 0,
+        format_func=lambda k: ep_options[k],
+        help=(
+            "Attaching an episode backfills that issue's archive file with the "
+            "Substack URL after you post. Leave as None for an ad-hoc post."
+        ),
+    )
+    st.session_state[SK_XP_EPISODE_ID] = selected_ep or ""
+    from_episode = bool(selected_ep)
 
     # --- Source content + Substack URL ---
     # Bind text widgets directly to the SK_XP_* keys via `key=` so that other
@@ -1354,24 +1387,67 @@ def render_cross_post():
         ),
     )
 
+    # --- Channels + authoring mode ---
+    ch_col, mode_col = st.columns([1, 2])
+    with ch_col:
+        st.markdown("**Post to**")
+        post_linkedin = st.checkbox(
+            "LinkedIn", value=st.session_state.get(SK_XP_POST_LINKEDIN, True),
+            key=SK_XP_POST_LINKEDIN,
+        )
+        post_threads = st.checkbox(
+            "Threads", value=st.session_state.get(SK_XP_POST_THREADS, True),
+            key=SK_XP_POST_THREADS,
+        )
+    with mode_col:
+        write_mode = st.radio(
+            "Post content",
+            options=[XP_MODE_AI, XP_MODE_FREEHAND],
+            key=SK_XP_WRITE_MODE,
+            horizontal=True,
+            help=(
+                f"'{XP_MODE_AI}' drafts the selected posts via Gemini. "
+                f"'{XP_MODE_FREEHAND}' gives you empty boxes and never calls "
+                "the API — no tokens used."
+            ),
+        )
+    freehand = write_mode == XP_MODE_FREEHAND
+
+    if not (post_linkedin or post_threads):
+        st.warning("Select at least one channel to post to.")
+
     # --- Generate Previews ---
     gen_col, dry_col = st.columns([2, 1])
     with gen_col:
-        if st.button(
+        if freehand:
+            st.caption(
+                "Freehand mode — write your posts below. No AI calls, no tokens used."
+            )
+        elif st.button(
             "Generate Previews", type="primary", key="xp_generate_btn",
-            disabled=not source.strip(),
-            help="Asks Gemini to draft both posts in kinney-voice.",
+            disabled=not source.strip() or not (post_linkedin or post_threads),
+            help="Asks Gemini to draft the selected posts in kinney-voice.",
         ):
             from gemini import generate_linkedin_preview, generate_threads_preview
-            with st.spinner("Drafting LinkedIn post..."):
-                li_text, li_err = generate_linkedin_preview(
-                    source.strip(), substack_url.strip(),
-                )
-            with st.spinner("Drafting Threads post..."):
-                th_text, th_err = generate_threads_preview(
-                    source.strip(), substack_url.strip(),
-                )
-            if li_text is None or th_text is None:
+            # Only generate for channels actually being posted to — an
+            # unchecked channel shouldn't cost a Gemini call.
+            li_text = th_text = None
+            li_err = th_err = None
+            if post_linkedin:
+                with st.spinner("Drafting LinkedIn post..."):
+                    li_text, li_err = generate_linkedin_preview(
+                        source.strip(), substack_url.strip(),
+                    )
+            if post_threads:
+                with st.spinner("Drafting Threads post..."):
+                    th_text, th_err = generate_threads_preview(
+                        source.strip(), substack_url.strip(),
+                    )
+            failed = (
+                (post_linkedin and li_text is None)
+                or (post_threads and th_text is None)
+            )
+            if failed:
                 msg = "Preview generation failed."
                 err = li_err or th_err
                 if err:
@@ -1380,8 +1456,10 @@ def render_cross_post():
                     msg += " Check that GEMINI_API_KEY is configured."
                 st.error(msg)
             else:
-                st.session_state[SK_XP_LINKEDIN_DRAFT] = li_text
-                st.session_state[SK_XP_THREADS_DRAFT] = th_text
+                if post_linkedin:
+                    st.session_state[SK_XP_LINKEDIN_DRAFT] = li_text
+                if post_threads:
+                    st.session_state[SK_XP_THREADS_DRAFT] = th_text
                 st.session_state.pop(SK_XP_LAST_RESULT, None)
                 st.success("Previews ready. Edit below, then Post Now.")
     with dry_col:
@@ -1400,36 +1478,51 @@ def render_cross_post():
     li_draft = st.session_state.get(SK_XP_LINKEDIN_DRAFT)
     th_draft = st.session_state.get(SK_XP_THREADS_DRAFT)
 
-    if li_draft is not None or th_draft is not None:
+    # In freehand mode the boxes are the starting point, so show them straight
+    # away rather than waiting on a generation step that never happens.
+    if freehand:
+        st.session_state.setdefault(SK_XP_LINKEDIN_DRAFT, "")
+        st.session_state.setdefault(SK_XP_THREADS_DRAFT, "")
+
+    if freehand or li_draft is not None or th_draft is not None:
         st.divider()
-        st.subheader("Edit Previews")
+        st.subheader("Write Posts" if freehand else "Edit Previews")
 
-        li_col, th_col = st.columns(2)
+        # Only surface the channels being posted to.
+        if post_linkedin and post_threads:
+            li_col, th_col = st.columns(2)
+        else:
+            li_col = th_col = st.container()
 
-        with li_col:
-            st.markdown("**LinkedIn**")
-            li_edited = st.text_area(
-                "LinkedIn post",
-                height=320,
-                key=SK_XP_LINKEDIN_DRAFT,
-                label_visibility="collapsed",
-            )
-            words = len([w for w in li_edited.split() if w.strip()])
-            st.caption(f"{words} words · {len(li_edited)} chars")
+        li_edited = ""
+        th_edited = ""
 
-        with th_col:
-            st.markdown("**Threads**")
-            th_edited = st.text_area(
-                "Threads post",
-                height=320,
-                key=SK_XP_THREADS_DRAFT,
-                label_visibility="collapsed",
-                help=(
-                    f"Hard cap: {THREADS_CHAR_LIMIT} chars per segment. Use "
-                    "'---THREAD---' on its own line to split into a thread."
-                ),
-            )
-            _render_threads_char_counter(th_edited)
+        if post_linkedin:
+            with li_col:
+                st.markdown("**LinkedIn**")
+                li_edited = st.text_area(
+                    "LinkedIn post",
+                    height=320,
+                    key=SK_XP_LINKEDIN_DRAFT,
+                    label_visibility="collapsed",
+                )
+                words = len([w for w in li_edited.split() if w.strip()])
+                st.caption(f"{words} words · {len(li_edited)} chars")
+
+        if post_threads:
+            with th_col:
+                st.markdown("**Threads**")
+                th_edited = st.text_area(
+                    "Threads post",
+                    height=320,
+                    key=SK_XP_THREADS_DRAFT,
+                    label_visibility="collapsed",
+                    help=(
+                        f"Hard cap: {THREADS_CHAR_LIMIT} chars per segment. Use "
+                        "'---THREAD---' on its own line to split into a thread."
+                    ),
+                )
+                _render_threads_char_counter(th_edited)
 
         # --- Post Now ---
         st.divider()
@@ -1442,18 +1535,21 @@ def render_cross_post():
                 "Paste it above to enable Post Now."
             )
 
-        # Threads hard limit gate
+        # Threads hard limit gate (only when actually posting to Threads)
         from cross_post import threads_segments_within_limit
-        threads_ok, _ = threads_segments_within_limit(th_edited)
-        if not threads_ok:
-            st.warning(
-                "One or more Threads segments exceed the 500-char limit. "
-                "Edit the post until the counter goes green."
-            )
+        threads_ok = True
+        if post_threads:
+            threads_ok, _ = threads_segments_within_limit(th_edited)
+            if not threads_ok:
+                st.warning(
+                    "One or more Threads segments exceed the 500-char limit. "
+                    "Edit the post until the counter goes green."
+                )
 
         post_disabled = (
             gate_blocked
             or not threads_ok
+            or not (post_linkedin or post_threads)
             or not (li_edited.strip() or th_edited.strip())
         )
 
@@ -1471,8 +1567,8 @@ def render_cross_post():
                         spreadsheet,
                         source_content=source.strip(),
                         substack_url=substack_url.strip(),
-                        linkedin_content=li_edited.strip(),
-                        threads_content=th_edited.strip(),
+                        linkedin_content=li_edited.strip() if post_linkedin else "",
+                        threads_content=th_edited.strip() if post_threads else "",
                         episode_id=episode_id,
                         dry_run=dry_run,
                     )

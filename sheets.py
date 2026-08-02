@@ -524,6 +524,19 @@ def save_config(spreadsheet, config_dict):
 # --- Published Episodes Operations ---
 
 
+def read_published_episodes(spreadsheet, limit=25):
+    """
+    Returns recent published episodes as a list of dicts, newest first.
+
+    Used by the Cross-Post page's episode picker so an episode can be attached
+    to a cross-post at any time — not just in the unbroken browser session
+    right after publishing.
+    """
+    worksheet = spreadsheet.worksheet(EPISODES_TAB)
+    records = worksheet.get_all_records()
+    return list(reversed(records))[:limit]
+
+
 def compute_fallback_title(sections):
     """
     The title used when no editorial title is given: section names joined
