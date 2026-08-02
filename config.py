@@ -187,6 +187,24 @@ def get_corpus_github_config():
     }
 
 
+def _normalize_person_urn(value):
+    """
+    Returns the full `urn:li:person:<id>` form LinkedIn's UGC /author field
+    requires, accepting either that or a bare member id.
+
+    The setup flow reads the member id out of /v2/userinfo's `sub` field, so
+    pasting the bare id is an easy mistake — and LinkedIn rejects it with an
+    opaque 403 ("Data Processing Exception while processing fields [/author]")
+    rather than anything that points at the real problem.
+    """
+    if not value:
+        return value
+    value = value.strip()
+    if value.startswith("urn:li:"):
+        return value
+    return f"urn:li:person:{value}"
+
+
 def get_linkedin_credentials():
     """
     Returns a dict of LinkedIn credentials for the cross-poster.
@@ -201,7 +219,7 @@ def get_linkedin_credentials():
     """
     return {
         "access_token": _get_secret("LINKEDIN_ACCESS_TOKEN"),
-        "person_urn": _get_secret("LINKEDIN_PERSON_URN"),
+        "person_urn": _normalize_person_urn(_get_secret("LINKEDIN_PERSON_URN")),
     }
 
 
