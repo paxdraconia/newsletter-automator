@@ -83,6 +83,7 @@ from sheets import (
     save_config,
     publish_episode,
     compute_fallback_title,
+    update_corpus_substack_url,
     read_book_ledger,
     add_to_book_ledger,
     update_book_ledger_entry,
@@ -1425,6 +1426,7 @@ def render_cross_post():
                 disabled=post_disabled,
             ):
                 from cross_post import post_now
+                episode_id = str(st.session_state.get(SK_XP_EPISODE_ID, ""))
                 with st.spinner("Posting..."):
                     result = post_now(
                         spreadsheet,
@@ -1432,12 +1434,23 @@ def render_cross_post():
                         substack_url=substack_url.strip(),
                         linkedin_content=li_edited.strip(),
                         threads_content=th_edited.strip(),
-                        episode_id=str(
-                            st.session_state.get(SK_XP_EPISODE_ID, "")
-                        ),
+                        episode_id=episode_id,
                         dry_run=dry_run,
                     )
                 st.session_state[SK_XP_LAST_RESULT] = result
+
+                # Backfill the corpus file's substack_url now that we have
+                # it — triggered by receiving the URL, not by post success.
+                if episode_id and substack_url.strip():
+                    try:
+                        update_corpus_substack_url(
+                            spreadsheet, episode_id, substack_url.strip(),
+                            get_corpus_github_config(),
+                        )
+                    except Exception as e:
+                        st.warning(
+                            f"Corpus URL backfill failed (logged, not blocking): {e}"
+                        )
 
         with reset_col:
             if st.button("Reset", key="xp_reset_btn"):

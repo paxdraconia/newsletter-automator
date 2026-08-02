@@ -696,6 +696,81 @@ def _write_corpus_issue(
         )
 
 
+def update_corpus_substack_url(spreadsheet, episode_id, substack_url, corpus_github):
+    """
+    Backfills the substack_url frontmatter field on an already-published
+    corpus issue, once the cross-post flow captures the real Substack URL.
+
+    The corpus filename isn't stored anywhere — it's reconstructed from
+    Published_Episodes' Title + Publish_Date, the same inputs
+    _write_corpus_issue() used to build it in the first place, so no new
+    state is needed to find the file again.
+    """
+    corpus_github = corpus_github or {}
+    token = corpus_github.get("token")
+    repo = corpus_github.get("repo")
+    branch = corpus_github.get("branch", "master")
+    if not token or not repo or not episode_id or not substack_url:
+        return  # Not configured, or nothing to backfill.
+
+    episodes_ws = spreadsheet.worksheet(EPISODES_TAB)
+    matching = [
+        row for row in episodes_ws.get_all_records()
+        if str(row.get("Episode_ID")) == str(episode_id)
+    ]
+    if not matching:
+        return
+
+    title = matching[0].get("Title", "")
+    date_str = str(matching[0].get("Publish_Date", ""))[:10]
+    filename = f"{date_str}-{_slugify(title)}.md"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    api_url = f"https://api.github.com/repos/{repo}/contents/issues/{filename}"
+
+    get_resp = requests.get(api_url, headers=headers, params={"ref": branch}, timeout=15)
+    if get_resp.status_code == 404:
+        return  # Corpus file doesn't exist (e.g. corpus write wasn't configured at publish time).
+    if not get_resp.ok:
+        raise RuntimeError(
+            f"GitHub API error ({get_resp.status_code}) fetching {filename}: "
+            f"{get_resp.text[:300]}"
+        )
+
+    file_data = get_resp.json()
+    current_content = base64.b64decode(file_data["content"]).decode("utf-8")
+    m = re.match(r"^(---\n)(.*?\n)(---\n)(.*)$", current_content, re.S)
+    if not m:
+        raise RuntimeError(f"Could not parse frontmatter in {filename}")
+
+    # Non-greedy match stops at the first "---\n", which is always the
+    # legitimate closing delimiter even if the body later has a markdown
+    # horizontal rule. group(4) is everything after it, preserved verbatim.
+    frontmatter = yaml.safe_load(m.group(2))
+    frontmatter["substack_url"] = substack_url
+    new_fm_yaml = yaml.safe_dump(
+        frontmatter, sort_keys=False, allow_unicode=True, default_flow_style=False
+    )
+    new_content = f"---\n{new_fm_yaml}---\n{m.group(4)}"
+
+    payload = {
+        "message": f"Backfill substack_url: {title}",
+        "content": base64.b64encode(new_content.encode("utf-8")).decode("ascii"),
+        "branch": branch,
+        "sha": file_data["sha"],
+    }
+    put_resp = requests.put(api_url, json=payload, headers=headers, timeout=15)
+    if not put_resp.ok:
+        raise RuntimeError(
+            f"GitHub API error ({put_resp.status_code}) updating {filename}: "
+            f"{put_resp.text[:300]}"
+        )
+
+
 # --- Cross-Poster Operations ---
 # These functions manage the Pending_CrossPosts and CrossPost_Log tabs that
 # back the LinkedIn/Threads cross-poster (v2). Conventions:
