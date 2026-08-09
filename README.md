@@ -144,10 +144,24 @@ Long-lived Threads tokens can be refreshed indefinitely *before* they expire —
 | `kinney_voice.py` | Loader for the kinney-voice writing style guide |
 | `kinney-voice/SKILL.md` | The kinney-voice style guide (bundled in-repo) |
 | `constants.py` | Shared constants — session keys, section names, defaults |
+| `tests/` | Pytest suite for the data layer (see Running Tests) |
 | `requirements.txt` | Python dependencies |
 | `.env.template` | Template for local development secrets |
 | `.streamlit/secrets.toml.template` | Template for Streamlit Cloud secrets |
 | `starter_books.json.template` | Template for bulk book import (optional) |
+
+## Running Tests
+
+```bash
+pytest
+```
+
+The suite covers the data layer — the publish path, the nerdout-corpus write,
+and the `substack_url` backfill — against in-memory fakes. **No test touches
+Google Sheets, GitHub, or any network**, so it's safe to run against a working
+copy at any time. The load-bearing case is `test_corpus_failure_never_breaks_the_publish`:
+publishing must survive a corpus write failure, since a half-published episode
+isn't recoverable the way a missing archive file is.
 
 ## Starter Books (Optional)
 

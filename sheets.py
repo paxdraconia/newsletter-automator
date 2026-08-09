@@ -230,12 +230,10 @@ def add_to_backlog(spreadsheet, url, reflection, category, needs_research=False)
     # Check for duplicates by searching the URL column (column 3)
     # Skip deduplication when URL is empty (reflection-only entries can't be deduped)
     if url:
-        try:
-            cell = worksheet.find(url, in_column=3)
-            if cell:
-                return (False, f"This URL already exists (row {cell.row}). Skipping.")
-        except gspread.exceptions.CellNotFound:
-            pass  # URL not found — good, we can add it
+        # find() returns None when there's no match — nothing is raised.
+        cell = worksheet.find(url, in_column=3)
+        if cell:
+            return (False, f"This URL already exists (row {cell.row}). Skipping.")
 
     # Generate a simple incrementing ID
     # We count all rows (including header) so row count = next ID
@@ -310,12 +308,9 @@ def add_to_book_ledger(spreadsheet, title, link, categories,
 
     # Check for duplicate links
     if link:
-        try:
-            cell = worksheet.find(link, in_column=2)
-            if cell:
-                return (False, f"'{title}' already exists (row {cell.row}). Skipping.")
-        except gspread.exceptions.CellNotFound:
-            pass
+        cell = worksheet.find(link, in_column=2)
+        if cell:
+            return (False, f"'{title}' already exists (row {cell.row}). Skipping.")
 
     # Last_Used starts empty (set only when used in an episode). Times_Used = 0.
     row = [title, link, categories, "", 0, description, store]
@@ -372,17 +367,15 @@ def update_book_usage(spreadsheet, book_titles):
     today = datetime.now().strftime("%Y-%m-%d")
 
     for title in book_titles:
-        try:
-            cell = worksheet.find(title, in_column=1)
-            if cell:
-                # Update Last_Used to today
-                worksheet.update_cell(cell.row, last_used_col, today)
-                # Increment Times_Used
-                current_times = worksheet.cell(cell.row, times_used_col).value
-                new_times = int(current_times or 0) + 1
-                worksheet.update_cell(cell.row, times_used_col, new_times)
-        except gspread.exceptions.CellNotFound:
-            pass  # Book not found — skip silently
+        cell = worksheet.find(title, in_column=1)
+        if cell:
+            # Update Last_Used to today
+            worksheet.update_cell(cell.row, last_used_col, today)
+            # Increment Times_Used
+            current_times = worksheet.cell(cell.row, times_used_col).value
+            new_times = int(current_times or 0) + 1
+            worksheet.update_cell(cell.row, times_used_col, new_times)
+        # Not found — skip silently; find() returns None rather than raising.
 
 
 # --- Publication Discovery ---
@@ -901,11 +894,8 @@ def read_pending_crossposts(spreadsheet, *, include_terminal=False):
 def _row_for_crosspost(spreadsheet, crosspost_id):
     """Find the sheet row number for a crosspost ID. Returns None if missing."""
     worksheet = spreadsheet.worksheet(PENDING_XP_TAB)
-    try:
-        cell = worksheet.find(str(crosspost_id), in_column=1)
-        return cell.row if cell else None
-    except gspread.exceptions.CellNotFound:
-        return None
+    cell = worksheet.find(str(crosspost_id), in_column=1)
+    return cell.row if cell else None
 
 
 def update_crosspost_status(
