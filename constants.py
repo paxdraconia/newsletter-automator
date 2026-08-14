@@ -9,7 +9,11 @@ Import what you need instead of scattering string literals across files.
 APP_TITLE = "Newsletter Automator"
 
 # --- Gemini AI ---
-GEMINI_MODEL = "gemini-2.5-flash"
+# The "-latest" alias rather than a pinned version: a pinned gemini-2.5-pro
+# was retired for new API keys mid-2026 and started returning 404, and a
+# pinned flash will age out the same way. Publishing failing because a model
+# name expired is a bad way to discover that.
+GEMINI_MODEL = "gemini-flash-latest"
 
 # --- Draft section names ---
 # Used when building, editing, and publishing newsletter drafts.
