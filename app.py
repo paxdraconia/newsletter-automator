@@ -572,6 +572,33 @@ def _render_draft_generation_step(entries_lookup):
                 st.cache_data.clear()
 
 
+def _autosave_draft():
+    """on_change callback for draft text areas: persist every section to Sheets.
+
+    Streamlit commits a text area's value on blur or Ctrl+Enter, then runs this
+    before the rerun, so session_state already holds the new text. A failure
+    here only toasts a warning; it never blocks editing.
+    """
+    sections = st.session_state.get(SK_DRAFT_SECTIONS)
+    if not sections:
+        return
+    current = [
+        {
+            "section": s["section"],
+            "content": st.session_state.get(
+                f"draft_section_{s['section']}", s["content"]
+            ),
+        }
+        for s in sections
+    ]
+    try:
+        save_draft(spreadsheet, current)
+        st.session_state[SK_DRAFT_SECTIONS] = current
+        st.toast("Draft autosaved")
+    except Exception as e:  # noqa: BLE001 - autosave must never break editing
+        st.toast(f"Autosave failed: {e}", icon="⚠️")
+
+
 def _render_draft_editor():
     """Step 4: Show editable text areas for each draft section.
 
@@ -580,8 +607,9 @@ def _render_draft_editor():
     st.divider()
     st.subheader("Step 4: Edit Your Draft")
     st.caption(
-        "Edit each section below. Click 'Save Draft' to persist your changes "
-        "to Google Sheets — you can come back later and pick up where you left off."
+        "Edit each section below. Changes autosave to Google Sheets when you "
+        "click out of a box or press Ctrl+Enter, so you can come back later "
+        "and pick up where you left off. 'Save Draft' still works as a manual save."
     )
 
     draft_sections = st.session_state[SK_DRAFT_SECTIONS]
@@ -598,6 +626,7 @@ def _render_draft_editor():
             height=200,
             key=f"draft_section_{section['section']}",
             label_visibility="collapsed",
+            on_change=_autosave_draft,
         )
         edited_sections.append({
             "section": section["section"],
