@@ -100,9 +100,15 @@ Replace an adjective or adverb with a sharper verb, a number, or a proper noun w
 
 Flag and usually replace: leverage (say "use"), synergy, transformative, game-changing, unlock, unleash, empower, robust, seamless, turnkey, "in today's ___ landscape," "at the end of the day," "circle back."
 
-### No em-dashes, no bot tells
+### No dashes, no bot tells
 
 Use two sentences. Parentheticals either belong in the sentence or don't belong at all. Never use the "it's not X, it's Y" construction; Alyn calls it out as sounding like a bot.
+
+Alyn dislikes dashes of any kind, hyphens included, even where they're correct. Rewrite hyphenated compounds when you can: "a first draft that comes back," not "a first-draft contract"; "a plan for ten weeks," not "a ten-week plan." Keep a hyphen only where no plain rewrite reads well.
+
+### Vary sentence length
+
+Mix short lines with longer ones. A sentence of two or three words lands harder after a long one. Three sentences of the same length in a row read flat; break one up or join two.
 
 ### End on a door, not a warning
 
@@ -128,7 +134,7 @@ Name the problem, show the cost, point at the door that is actually open. A grou
 
 **Reader.** The broader L&D and HR community, plus people who might hire or work with Alyn.
 
-**Posts.** Short and spiky. State the received wisdom, then name what it misses. One sharp opening claim, a line or two of context, the pivot, an optional concrete example. Under 150 words, often under 100. One proper noun, number, or artifact per post.
+**Posts.** Short and spiky. State the received wisdom, then name what it misses. One sharp opening claim, a line or two of context, the pivot, an optional concrete example. Under 150 words, often under 100. One proper noun, number, or artifact per post. Give each beat its own line and vary the length: a short fragment or two ("Logins. Seats in use."), then a longer sentence that does the work.
 
 **Comments.** Extend the post with a specific experience, add what it missed, or disagree concretely. Don't soften real disagreement.
 
@@ -174,4 +180,4 @@ These go out as final drafts, not first drafts.
 4. Cut 20 percent. It almost always sharpens.
 5. Door or warning at the end?
 6. Run the mistakes list: typos, doubled words, apostrophes, names, commas, stranded fragments, repeated words, setups with no payoff.
-7. Search for slop words, hedges, cliché pairings, em-dashes, "it's not X, it's Y," and any paragraph a stranger could have written.
+7. Search for slop words, hedges, cliché pairings, dashes and hyphens, three sentences of the same length in a row, "it's not X, it's Y," and any paragraph a stranger could have written.
